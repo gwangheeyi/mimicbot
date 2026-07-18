@@ -1,0 +1,38 @@
+# ROS2 빌드 결과물
+ros2_ws/build/
+ros2_ws/install/
+ros2_ws/log/
+
+# Python 캐시
+**/__pycache__/
+*.py[cod]
+*$py.class
+
+# Python 테스트 및 분석 캐시
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# 가상환경
+.venv/
+venv/
+env/
+
+# Gazebo 캐시 및 로그
+.gz/
+.gazebo/
+
+# 운영체제 임시 파일
+.DS_Store
+Thumbs.db
+
+# 편집기 설정 및 임시 파일
+.idea/
+*.swp
+*.swo
+*~
+
+# 로그
+*.log
