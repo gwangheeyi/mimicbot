@@ -33,6 +33,7 @@ import xacro
 
 
 def generate_launch_description():
+
     # Launch Arguments
     open_manipulator_description_path = os.path.join(
         get_package_share_directory('open_manipulator_description')

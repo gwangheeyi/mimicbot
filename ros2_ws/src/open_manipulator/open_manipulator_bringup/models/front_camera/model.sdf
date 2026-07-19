@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <sdf version="1.9">
-  <model name="omx_front_camera">
+  <model name="front_camera">
     <static>true</static>
 
     <!--

@@ -9,12 +9,6 @@
     <plugin name='gz::sim::systems::UserCommands' filename='gz-sim-user-commands-system'/>
     <plugin name='gz::sim::systems::SceneBroadcaster' filename='gz-sim-scene-broadcaster-system'/>
     <plugin name='gz::sim::systems::Contact' filename='gz-sim-contact-system'/>
-    
-    <!-- Gazebo 카메라, 라이다 등의 센서를 작동시키는 시스템 플러그인입니다. -->
-    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
-        <render_engine>ogre2</render_engine>
-    </plugin>
-    
     <gravity>0 0 -9.8000000000000007</gravity>
     <magnetic_field>5.5644999999999998e-06 2.2875799999999999e-05 -4.2388400000000002e-05</magnetic_field>
     <atmosphere type='adiabatic'/>
@@ -98,73 +92,5 @@
         <falloff>0</falloff>
       </spot>
     </light>
-<!--
-  OMX-AI 로봇을 정면에서 촬영하는 고정 카메라 모델입니다.
-  static=true이므로 중력의 영향을 받지 않고 월드의 지정 위치에 고정됩니다.
--->
-<model name="front_camera">
-  <static>true</static>
-
-  <!--
-    카메라의 월드 좌표입니다.
-    xyz: x y z
-    rpy: roll pitch yaw
-
-    현재 예시는 로봇 앞쪽 x=1.5m, 높이 z=1.0m에 배치한 뒤
-    로봇 원점 방향을 바라보도록 yaw를 약 180도 회전시킵니다.
-  -->
-  <pose>1.5 0 1.0 0 0 3.14159</pose>
-
-  <link name="front_camera_link">
-
-    <!-- 카메라 본체를 화면에서 확인하기 위한 시각 모델입니다. -->
-    <visual name="camera_body_visual">
-      <geometry>
-        <box>
-          <size>0.12 0.08 0.08</size>
-        </box>
-      </geometry>
-
-      <material>
-        <ambient>0.1 0.1 0.1 1</ambient>
-        <diffuse>0.1 0.1 0.1 1</diffuse>
-      </material>
-    </visual>
-
-    <!--
-      Gazebo 카메라 센서입니다.
-      update_rate는 초당 이미지 발행 횟수입니다.
-    -->
-    <sensor name="front_camera_sensor" type="camera">
-      <always_on>true</always_on>
-      <update_rate>30</update_rate>
-      <visualize>true</visualize>
-
-      <!--
-        카메라 센서의 상대 위치와 방향입니다.
-        Gazebo 카메라는 기본적으로 센서의 +X 방향을 바라봅니다.
-      -->
-      <pose>0 0 0 0 0 0</pose>
-
-      <camera>
-        <horizontal_fov>1.047</horizontal_fov>
-
-        <image>
-          <width>1280</width>
-          <height>720</height>
-          <format>R8G8B8</format>
-        </image>
-
-        <clip>
-          <near>0.05</near>
-          <far>100</far>
-        </clip>
-      </camera>
-
-      <!-- Gazebo Transport 토픽 이름입니다. -->
-      <topic>/omx_front_camera/image</topic>
-    </sensor>
-  </link>
-</model>
   </world>
 </sdf>
