@@ -1,0 +1,80 @@
+
+1. 패키지 생성
+ros2 pkg create open_manipulator_app_control \
+  --build-type ament_python \
+  --dependencies rclpy trajectory_msgs std_msgs
+
+
+구조는 아래와 같이 만든다
+
+open_manipulator_app_control/
+├── config/
+│   └── robot_config.py
+├── omx_ai_app_control/
+│   ├── __init__.py
+│   ├── motion_controller.py
+│   └── motion_server.py
+├── resource/
+├── package.xml
+├── setup.cfg
+└── setup.py
+
+1. 먼저 로봇팔 관절 4개만 움직여봅니다.
+ros2 topic pub --once \
+/arm_controller/joint_trajectory \
+trajectory_msgs/msg/JointTrajectory \
+"{
+  joint_names: ['joint1', 'joint2', 'joint3', 'joint4'],
+  points: [
+    {
+      positions: [0.0, -0.7, 0.5, 0.2],
+      time_from_start: {sec: 2, nanosec: 0}
+    }
+  ]
+}"
+
+기본 자세로 복귀
+ros2 topic pub --once \
+/arm_controller/joint_trajectory \
+trajectory_msgs/msg/JointTrajectory \
+"{
+  joint_names: ['joint1', 'joint2', 'joint3', 'joint4'],
+  points: [
+    {
+      positions: [0.0, 0.0, 0.0, 0.0],
+      time_from_start: {sec: 2, nanosec: 0}
+    }
+  ]
+}"
+
+공통 상수 파일 만들기
+
+1.nano ~/mimicbot/ros2_ws/src/open_manipulator_app_control/open_manipulator_app_control/robot_config.py
+
+공유 동작 함수 작성
+
+2. nano ~/mimicbot/ros2_ws/src/open_manipulator_app_control/open_manipulator_app_control/motion_controller.py
+
+ROS2 명령 수신 노드
+
+3. nano ~/mimicbot/ros2_ws/src/open_manipulator_app_control/open_manipulator_app_control/motion_server.py
+
+setup.py 등록
+
+빌드 및 실행
+cd ~/mimicbot/ros2_ws
+
+colcon build \
+  --symlink-install \
+  --packages-select open_manipulator_app_control
+
+source install/setup.bash
+
+동작 서버 실행
+ros2 run open_manipulator motion_server
+
+버튼 명령 테스트
+ros2 topic pub --once \
+/open_manipulator/motion_command \
+std_msgs/msg/String \
+"{data: 'ready'}"
