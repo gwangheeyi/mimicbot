@@ -1,0 +1,137 @@
+1. worlds/camera_test.sdf  파일을 만든 다음
+2.gz sim -v 4 ~/mimicbot/ros2_ws/src/open_manipulator/open_manipulator_playground/worlds/camera_test.sdf
+
+실행하면 가제보에 카메라 모델을 볼 수 있다.
+
+3. gz topic -l | grep camera
+
+카메라 토픽 확인
+
+가제보 카메라를 켜 둔 상태에서 Gazebo->ROS2 이미지 브리지
+source /opt/ros/jazzy/setup.bash
+
+ros2 run ros_gz_bridge parameter_bridge \
+'/gazebo/camera/image@sensor_msgs/msg/Image[gz.msgs.Image' \
+--ros-args \
+-r /gazebo/camera/image:=/camera/image_raw
+
+가제보 토픽 정보를 확인한 후 구독자가 표시될 수 있다.
+gz topic -i -t /gazebo/camera/image
+결과는 
+home@GYI-GwangMyeong:~/mimicbot/ros2_ws$ gz topic -i -t /gazebo/camera/image
+Publishers [Address, Message Type]:
+  tcp://211.196.255.29:44847, gz.msgs.Image
+Subscribers [Address, Message Type]:
+  tcp://211.196.255.29:44825, gz.msgs.Image
+
+이제 ROS2에서 영상확인
+ros2 run rqt_image_view rqt_image_view
+실행한 후
+토픽 목록 /camera/image_raw  를 선택하면 카메라 이미지를 볼 수 있다.
+
+웹뷰로 보기
+
+1. 설치
+sudo apt install ros-jazzy-web-video-server
+
+2. 실행
+ros2 run web_video_server web_video_server
+
+3. Windows 브라우저에서 확인
+http://localhost:8080/stream_viewer?topic=/camera/image_raw
+
+4. 안되면 wsl 주소확인
+hostname -I
+예를 들어 WSL IP가 172.28.144.21이면:
+http://172.28.144.21:8080/stream_viewer?topic=/camera/image_raw
+
+현재 단계는 이렇게 진행된 것
+
+Gazebo 카메라
+   ↓ 정상
+/gazebo/camera/image
+   ↓ ros_gz_bridge
+/camera/image_raw
+   ↓ web_video_server
+HTTP 영상
+   ↓
+Flutter WebView
+
+지금 출력은 카메라 생성에 성공했다는 뜻이며, 다음 핵심 명령은 이것입니다.
+
+ros2 run ros_gz_bridge parameter_bridge \
+'/gazebo/camera/image@sensor_msgs/msg/Image[gz.msgs.Image' \
+--ros-args \
+-r /gazebo/camera/image:=/camera/image_raw
+
+camera_test.sdf 에서
+빨간 상자를 움직이게 하려면
+<model name="red_box">
+  <static>true</static>
+
+카메라를 움직이게 하려면
+<model name="fixed_camera">
+  <static>false</static>
+
+카메라를 떨어 뜨리지 않게 하려면
+<model name="fixed_camera">
+  <static>false</static>
+
+  <link name="camera_link">
+    <gravity>false</gravity>
+
+카메라를 아애롸 같이 수정
+<model name="fixed_camera">
+  <static>false</static>
+
+  <pose>3 0 1.5 0 0 3.141592</pose>
+
+  <link name="camera_link">
+
+    <!-- 카메라 모델이 중력으로 떨어지지 않게 합니다. -->
+    <gravity>false</gravity>
+
+    <visual name="camera_body">
+      <geometry>
+        <box>
+          <size>0.2 0.15 0.15</size>
+        </box>
+      </geometry>
+
+      <material>
+        <ambient>0.1 0.1 0.1 1</ambient>
+        <diffuse>0.1 0.1 0.1 1</diffuse>
+      </material>
+    </visual>
+
+    <sensor name="rgb_camera" type="camera">
+      <always_on>true</always_on>
+      <update_rate>30</update_rate>
+      <topic>/gazebo/camera/image</topic>
+      <visualize>true</visualize>
+
+      <camera>
+        <horizontal_fov>1.047</horizontal_fov>
+
+        <image>
+          <width>640</width>
+          <height>480</height>
+          <format>R8G8B8</format>
+        </image>
+
+        <clip>
+          <near>0.1</near>
+          <far>100</far>
+        </clip>
+      </camera>
+    </sensor>
+
+  </link>
+</model>
+
+이렇게 수정한 다음 가제보 다시 실행
+
+gz rqt 강제로 실행중지
+pkill -f gz
+pkill -f rqt
+
