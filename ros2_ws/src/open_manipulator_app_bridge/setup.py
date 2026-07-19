@@ -24,6 +24,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'app_bridge_server = open_manipulator_app_bridge.app_bridge_server:main',
         ],
     },
 )
