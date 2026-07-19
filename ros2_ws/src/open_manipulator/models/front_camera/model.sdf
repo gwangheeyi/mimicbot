@@ -1,0 +1,59 @@
+<?xml version="1.0"?>
+<sdf version="1.9">
+  <model name="omx_front_camera">
+    <static>true</static>
+
+    <!--
+      카메라 모델의 월드 좌표입니다.
+
+      x: 로봇 앞뒤 방향
+      y: 로봇 좌우 방향
+      z: 바닥으로부터의 높이
+
+      아래 값은 예시이므로 OMX-AI의 실제 방향에 맞게 조정해야 합니다.
+    -->
+    <pose>1.5 0 1.0 0 0 3.14159</pose>
+
+    <link name="camera_link">
+
+      <!-- 카메라 외형 -->
+      <visual name="camera_visual">
+        <geometry>
+          <box>
+            <size>0.12 0.18 0.10</size>
+          </box>
+        </geometry>
+
+        <material>
+          <ambient>0.1 0.1 0.1 1</ambient>
+          <diffuse>0.1 0.1 0.1 1</diffuse>
+        </material>
+      </visual>
+
+      <!-- 카메라 센서 -->
+      <sensor name="front_camera_sensor" type="camera">
+        <always_on>true</always_on>
+        <update_rate>30</update_rate>
+        <visualize>true</visualize>
+
+        <camera>
+          <horizontal_fov>1.047</horizontal_fov>
+
+          <image>
+            <width>1280</width>
+            <height>720</height>
+            <format>R8G8B8</format>
+          </image>
+
+          <clip>
+            <near>0.05</near>
+            <far>100</far>
+          </clip>
+        </camera>
+
+        <!-- ROS2로 발행될 카메라 토픽 이름 -->
+        <topic>/omx_front_camera/image_raw</topic>
+      </sensor>
+    </link>
+  </model>
+</sdf>
