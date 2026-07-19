@@ -1,8 +1,9 @@
-
+from glob import glob
+import os
 
 from setuptools import find_packages, setup
 
-package_name = 'open_manipulator_app_control'
+package_name = 'open_manipulator_app_bridge'
 
 setup(
     name=package_name,
@@ -26,7 +27,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'motion_server = open_manipulator_app_control.motion_server:main',
+            'app_bridge_server = open_manipulator_app_bridge.app_bridge_server:main',
         ],
     },
 )

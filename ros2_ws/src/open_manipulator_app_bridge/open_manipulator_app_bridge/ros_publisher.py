@@ -62,7 +62,7 @@ class OmxCommandPublisher:
             self._executor.spin_once(timeout_sec=0.05)
 
         self._node.get_logger().info(
-            f"OMX-AI 명령 발행: {ros_command}"
+            f"open_manipulator 명령 발행: {ros_command}"
         )
 
         return ros_command

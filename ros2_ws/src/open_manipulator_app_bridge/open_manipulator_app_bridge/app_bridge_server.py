@@ -42,7 +42,7 @@ async def lifespan(
 
 
 app = FastAPI(
-    title="OMX-AI App Bridge",
+    title="open_manipulator App Bridge",
     version="1.0.0",
     lifespan=lifespan,
 )
@@ -91,7 +91,7 @@ def send_robot_command(
     return CommandResponse(
         success=True,
         command=published_command,
-        message="OMX-AI 명령을 발행했습니다.",
+        message="open_manipulator 명령을 발행했습니다.",
     )
 
 

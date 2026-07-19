@@ -1,30 +1,51 @@
+from glob import glob
+import os
 from setuptools import find_packages, setup
 
-package_name = 'open_manipulator_app_bridge'
+
+PACKAGE_NAME = "open_manipulator_app_bridge"
+
 
 setup(
-    name=package_name,
-    version='0.0.0',
-    packages=find_packages(exclude=['test']),
+    name=PACKAGE_NAME,
+    version="0.0.1",
+    packages=find_packages(
+        exclude=["test"],
+    ),
     data_files=[
-        ('share/ament_index/resource_index/packages',
-            ['resource/' + package_name]),
-        ('share/' + package_name, ['package.xml']),
+        (
+            "share/ament_index/resource_index/packages",
+            [f"resource/{PACKAGE_NAME}"],
+        ),
+        (
+            f"share/{PACKAGE_NAME}",
+            ["package.xml"],
+        ),
+        (
+            f"share/{PACKAGE_NAME}/config",
+            glob("config/*.yaml"),
+        ),
+        (
+            f"share/{PACKAGE_NAME}/docs",
+            glob("docs/*.md"),
+        ),
     ],
-    install_requires=['setuptools'],
+    install_requires=[
+        "setuptools",
+        "fastapi",
+        "uvicorn",
+        "pyyaml",
+    ],
     zip_safe=True,
-    maintainer='home',
-    maintainer_email='gwanghee@gmail.com',
-    description='TODO: Package description',
-    license='TODO: License declaration',
-    extras_require={
-        'test': [
-            'pytest',
-        ],
-    },
+    maintainer="home",
+    maintainer_email="home@example.com",
+    description="Flutter 앱과 OMX-AI ROS2를 연결하는 브리지",
+    license="Apache-2.0",
     entry_points={
-        'console_scripts': [
-            'app_bridge_server = open_manipulator_app_bridge.app_bridge_server:main',
+        "console_scripts": [
+            (
+                'app_bridge_server = open_manipulator_app_bridge.app_bridge_server:main'
+            ),
         ],
     },
 )
