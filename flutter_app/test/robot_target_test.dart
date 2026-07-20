@@ -47,8 +47,8 @@ void main() {
 
       expect(await gazebo.moveToPoint(45, 60), contains('Gazebo 가상'));
       expect(await gazebo.moveToPoint(45, 60), contains('(45, 60)'));
-      expect(await omx.playGesture('경례'), contains('OMX-AI 실물'));
-      expect(await omx.playGesture('경례'), contains('경례'));
+      expect(await omx.playGesture('ready'), contains('OMX-AI 실물'));
+      expect(await omx.playGesture('ready'), contains('ready'));
 
       final skill = AutonomousSkills.all.first;
       expect(await omx.runSkillStep(skill, 0), contains(skill.steps[0]));
@@ -102,11 +102,15 @@ void main() {
       );
 
       // 명령이 실제로 그 대상의 백엔드로 나간다.
-      await tester.tap(find.widgetWithText(ActionChip, '경례'));
+      // 버튼에는 '준비'라고 쓰여 있어도 로봇에는 등록된 명령어 'ready'가 나가야 한다.
+      await tester.tap(find.widgetWithText(ActionChip, '준비'));
       await tester.pumpAndSettle();
 
-      expect(find.textContaining('[OMX-AI 실물]'), findsOneWidget);
-      expect(find.textContaining('"경례"'), findsOneWidget);
+      // 진입할 때 준비 자세로 맞추는 기록이 이미 한 줄 있으므로 여러 줄이 된다.
+      expect(find.textContaining('[OMX-AI 실물]'), findsWidgets);
+      expect(find.textContaining('"ready"'), findsWidgets);
+      // 가상 대상으로는 아무것도 나가지 않아야 한다.
+      expect(find.textContaining('[Gazebo 가상]'), findsNothing);
     });
 
     testWidgets('기본값은 가상 실행이라 실수로 실물이 움직이지 않는다',
@@ -115,10 +119,12 @@ void main() {
       await tester.tap(find.text('동작 명령').first);
       await tester.pumpAndSettle();
 
-      await tester.tap(find.widgetWithText(ActionChip, '안녕'));
+      await tester.tap(find.widgetWithText(ActionChip, '준비'));
       await tester.pumpAndSettle();
 
-      expect(find.textContaining('[Gazebo 가상]'), findsOneWidget);
+      // 가상 대상은 브리지 서버로 HTTP를 보낸다. 테스트에서는 서버가 없어 실패
+      // 로그가 남지만, 여기서 확인할 것은 명령이 실물이 아닌 가상으로 갔다는 점이다.
+      expect(find.textContaining('[Gazebo 가상]'), findsWidgets);
       expect(find.textContaining('[OMX-AI 실물]'), findsNothing);
     });
   });

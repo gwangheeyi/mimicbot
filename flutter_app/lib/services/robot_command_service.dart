@@ -32,17 +32,35 @@ class RobotCommandService {
   Future<RobotCommandResult> sendCommand(
     String command,
   ) async {
+    return _post(
+      AppConfig.robotCommandEndpoint,
+      {'command': command},
+    );
+  }
+
+  // 손 모방을 시작하거나 정지합니다.
+  // hand_mimic_node가 꺼져 있으면 서버가 실패로 알려줍니다.
+  Future<RobotCommandResult> setMimic(
+    bool enabled,
+  ) async {
+    return _post(
+      AppConfig.mimicEndpoint,
+      {'enabled': enabled},
+    );
+  }
+
+  // 브리지 서버에 JSON을 보내고 결과를 해석하는 공통 부분입니다.
+  Future<RobotCommandResult> _post(
+    String endpoint,
+    Map<String, dynamic> body,
+  ) async {
     try {
       final response = await _client.post(
-        Uri.parse(
-          AppConfig.robotCommandEndpoint,
-        ),
+        Uri.parse(endpoint),
         headers: const {
           'Content-Type': 'application/json',
         },
-        body: jsonEncode({
-          'command': command,
-        }),
+        body: jsonEncode(body),
       );
 
       final Map<String, dynamic> responseData =
@@ -50,8 +68,11 @@ class RobotCommandService {
               as Map<String, dynamic>;
 
       if (response.statusCode == 200) {
+        // 서버가 200을 주더라도 success가 false일 수 있습니다.
+        // 명령을 토픽에 발행은 했지만 받는 노드가 없는 경우가 그렇습니다.
+        // 이때 성공으로 처리하면 로봇이 안 움직이는 이유를 알 수 없게 됩니다.
         return RobotCommandResult(
-          success: true,
+          success: responseData['success'] as bool? ?? true,
           command: responseData['command'] as String?,
           message:
               responseData['message'] as String? ??

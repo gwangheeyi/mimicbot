@@ -1,14 +1,19 @@
 import 'package:flutter/material.dart';
 
+import '../config/app_config.dart';
+import '../config/robot_commands.dart';
 import '../services/claude_service.dart';
+import '../services/robot_backend.dart';
 import '../services/robot_target_scope.dart';
 import '../services/tts_service.dart';
+import '../widgets/camera_stream_view.dart';
+import '../widgets/command_log_panel.dart';
 import '../widgets/robot_target_badge.dart';
 
 /// 메뉴 1 — 동작 명령.
 ///
 /// 로봇 시점 화면에서 특정 지점을 탭하면 로봇이 그 지점으로 이동하고,
-/// "안녕", "경례" 같은 프리셋/텍스트 명령을 주면 로봇이 그 동작을 따라합니다.
+/// "준비", "왼쪽" 같은 프리셋/텍스트 명령을 주면 로봇이 그 동작을 따라합니다.
 class CommandControlScreen extends StatefulWidget {
   const CommandControlScreen({super.key});
 
@@ -22,18 +27,49 @@ class _CommandControlScreenState extends State<CommandControlScreen> {
   final TextEditingController _commandController = TextEditingController();
   final TtsService _tts = TtsService();
 
-  static const _presets = <_Gesture>[
-    _Gesture('안녕', Icons.waving_hand),
-    _Gesture('경례', Icons.military_tech),
-    _Gesture('악수', Icons.handshake),
-    _Gesture('정지', Icons.pan_tool),
-  ];
+  /// 프리셋 버튼에 붙일 아이콘. 동작 목록 자체는 [RobotCommands.gestures]가 갖고 있다.
+  static const _icons = <String, IconData>{
+    RobotCommands.ready: Icons.accessibility_new,
+    RobotCommands.home: Icons.home_outlined,
+    RobotCommands.left: Icons.arrow_back,
+    RobotCommands.right: Icons.arrow_forward,
+    RobotCommands.up: Icons.arrow_upward,
+  };
+
+  /// 진입 시 손 모방을 한 번 껐는지. 화면당 한 번이면 충분하다.
+  bool _mimicStopped = false;
+
+  String get _greeting =>
+      '안녕, 나는 ${ClaudeService.robotName}야. 네가 버튼을 누르면 내가 따라해 볼게!';
 
   @override
   void initState() {
     super.initState();
     // 진입 시 인사말.
-    _tts.speak('안녕, 나는 ${ClaudeService.robotName}야. 네가 버튼을 누르면 내가 따라해 볼게!');
+    _tts.speak(_greeting);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_mimicStopped) return;
+    _mimicStopped = true;
+
+    _resetToReady(RobotTargetScope.of(context).backend);
+  }
+
+  /// 진입할 때 로봇을 알려진 자세로 맞춘다.
+  ///
+  /// 손 모방이 돌고 있으면 이 화면의 명령과 같은 토픽을 두고 다툰다. 메뉴 2를
+  /// 정상적으로 빠져나왔다면 이미 꺼져 있지만, 앱이 강제로 종료된 뒤라면 노드만
+  /// 켜진 채 남아 있을 수 있어 진입할 때 한 번 확실히 끄고 준비 자세로 되돌린다.
+  ///
+  /// 멈추기 전에 자세 명령을 보내면 노드가 그 뒤에 보낸 명령이 덮어쓰므로
+  /// 정지 응답을 받은 뒤에 이어 보낸다.
+  Future<void> _resetToReady(RobotBackend backend) async {
+    await backend.stopMimic();
+    // 로봇이 실제로 움직이는 일이니 기록에 남긴다.
+    _addLog(await backend.playGesture(RobotCommands.ready));
   }
 
   void _addLog(String message) {
@@ -73,7 +109,16 @@ class _CommandControlScreenState extends State<CommandControlScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('동작 명령'),
-        actions: const [RobotTargetBadge()],
+        actions: [
+          // 브라우저는 사용자가 누르기 전에는 소리를 막기도 한다.
+          // 이 버튼은 확실한 사용자 동작이라 그 경우에도 소리가 난다.
+          IconButton(
+            onPressed: () => _tts.speak(_greeting),
+            icon: const Icon(Icons.volume_up),
+            tooltip: '인사말 다시 듣기',
+          ),
+          const RobotTargetBadge(),
+        ],
       ),
       body: Column(
         children: [
@@ -93,20 +138,14 @@ class _CommandControlScreenState extends State<CommandControlScreen> {
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(color: Colors.white24),
                       ),
+                      // 잘린 모서리 밖으로 영상이 삐져나오지 않게 한다.
+                      clipBehavior: Clip.antiAlias,
                       child: Stack(
+                        fit: StackFit.expand,
                         children: [
-                          const Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.videocam_outlined,
-                                    size: 48, color: Colors.white38),
-                                SizedBox(height: 8),
-                                Text('로봇 시점 화면\n(화면을 탭해 이동 지점을 지정하세요)',
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(color: Colors.white38)),
-                              ],
-                            ),
+                          // Gazebo 카메라 영상 (web_video_server MJPEG).
+                          const CameraStreamView(
+                            streamUrl: AppConfig.cameraStreamUrl,
                           ),
                           if (_target != null)
                             Positioned(
@@ -130,11 +169,12 @@ class _CommandControlScreenState extends State<CommandControlScreen> {
               spacing: 8,
               runSpacing: 8,
               children: [
-                for (final g in _presets)
+                for (final g in RobotCommands.gestures)
                   ActionChip(
-                    avatar: Icon(g.icon, size: 18),
+                    avatar: Icon(_icons[g.command], size: 18),
                     label: Text(g.label),
-                    onPressed: () => _sendCommand(g.label),
+                    // 로봇에는 한글 이름이 아니라 등록된 명령어를 보낸다.
+                    onPressed: () => _sendCommand(g.command),
                   ),
               ],
             ),
@@ -150,7 +190,7 @@ class _CommandControlScreenState extends State<CommandControlScreen> {
                     textInputAction: TextInputAction.send,
                     onSubmitted: _sendCommand,
                     decoration: const InputDecoration(
-                      hintText: '명령 입력 (예: 손 흔들어)',
+                      hintText: '명령 입력 (예: 왼쪽)',
                       border: OutlineInputBorder(),
                       isDense: true,
                     ),
@@ -175,27 +215,11 @@ class _CommandControlScreenState extends State<CommandControlScreen> {
                 color: Theme.of(context).colorScheme.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: _log.isEmpty
-                  ? const Center(
-                      child: Text('명령 기록이 여기에 표시됩니다.',
-                          style: TextStyle(color: Colors.white38)))
-                  : ListView.builder(
-                      itemCount: _log.length,
-                      itemBuilder: (context, i) => Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 2),
-                        child: Text('• ${_log[i]}'),
-                      ),
-                    ),
+              child: CommandLogPanel(log: _log),
             ),
           ),
         ],
       ),
     );
   }
-}
-
-class _Gesture {
-  const _Gesture(this.label, this.icon);
-  final String label;
-  final IconData icon;
 }

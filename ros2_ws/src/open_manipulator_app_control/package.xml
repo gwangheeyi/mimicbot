@@ -10,6 +10,10 @@
   <depend>rclpy</depend>
   <depend>trajectory_msgs</depend>
   <depend>std_msgs</depend>
+  <!-- 손 모방(hand_mimic_node)에 필요합니다. -->
+  <depend>sensor_msgs</depend>
+  <depend>control_msgs</depend>
+  <depend>ament_index_python</depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

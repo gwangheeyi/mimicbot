@@ -1,6 +1,7 @@
 ros:
   node_name: open_manipulator_app_bridge
   command_topic: /open_manipulator/motion_command
+  mimic_enable_topic: /open_manipulator/mimic_enable
 
 server:
   host: 0.0.0.0

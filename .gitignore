@@ -36,3 +36,6 @@ Thumbs.db
 
 # 로그
 *.log
+
+# 손 인식 모델 (7.8MB). scripts/download_hand_model.sh 로 내려받습니다.
+*.task

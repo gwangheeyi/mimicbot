@@ -18,7 +18,7 @@ void main() {
     await tester.tap(find.text('동작 명령').first);
     await tester.pumpAndSettle();
 
-    expect(find.text('안녕'), findsOneWidget);
-    expect(find.text('경례'), findsOneWidget);
+    expect(find.text('준비'), findsOneWidget);
+    expect(find.text('왼쪽'), findsOneWidget);
   });
 }

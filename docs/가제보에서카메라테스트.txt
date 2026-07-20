@@ -10,15 +10,18 @@
 가제보 카메라를 켜 둔 상태에서 Gazebo->ROS2 이미지 브리지
 source /opt/ros/jazzy/setup.bash
 
+
+모든 창에서 ROS_DOMAIN_ID 값 일치------->아주 중요하다
+
 ros2 run ros_gz_bridge parameter_bridge \
-'/gazebo/camera/image@sensor_msgs/msg/Image[gz.msgs.Image' \
+'/front-camera/image@sensor_msgs/msg/Image[gz.msgs.Image' \
 --ros-args \
--r /gazebo/camera/image:=/camera/image_raw
+-r /front_camera/image:=/camera/image_raw
 
 가제보 토픽 정보를 확인한 후 구독자가 표시될 수 있다.
-gz topic -i -t /gazebo/camera/image
+gz topic -i -t /fromt_camera/image
 결과는 
-home@GYI-GwangMyeong:~/mimicbot/ros2_ws$ gz topic -i -t /gazebo/camera/image
+home@GYI-GwangMyeong:~/mimicbot/ros2_ws$ gz topic -i -t /front_camera/image
 Publishers [Address, Message Type]:
   tcp://211.196.255.29:44847, gz.msgs.Image
 Subscribers [Address, Message Type]:

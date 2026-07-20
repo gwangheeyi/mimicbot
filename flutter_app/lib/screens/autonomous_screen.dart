@@ -55,7 +55,7 @@ class _AutonomousScreenState extends State<AutonomousScreen> {
   Future<void> _initVoice() async {
     // TTS 한국어 여성 음성 설정.
     await _tts.setLanguage('ko-KR');
-    await _tts.setSpeechRate(0.5);
+    await _tts.setSpeechRate(kSpeechRate);
     await applyKoreanFemaleVoice(_tts);
     _tts.setCompletionHandler(() {
       if (mounted && _talk == _TalkState.speaking) {

@@ -3,6 +3,7 @@ from typing import AsyncIterator
 
 import uvicorn
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from open_manipulator_app_bridge.config import load_config
@@ -17,10 +18,16 @@ class CommandRequest(BaseModel):
     command: str
 
 
+class MimicRequest(BaseModel):
+    enabled: bool
+
+
 class CommandResponse(BaseModel):
     success: bool
     command: str
     message: str
+    # 명령 토픽을 듣고 있는 노드 수. 0이면 발행은 됐지만 로봇은 못 받은 것입니다.
+    subscribers: int = 0
 
 
 # FastAPI 서버가 시작될 때 ROS2 Publisher를 한 번 생성하고,
@@ -45,6 +52,21 @@ app = FastAPI(
     title="open_manipulator App Bridge",
     version="1.0.0",
     lifespan=lifespan,
+)
+
+
+# Flutter 앱을 웹(Chrome)에서 실행하면 앱과 이 서버의 포트가 달라
+# 브라우저가 교차 출처 요청으로 보고 막습니다. JSON 본문을 보내는 POST는
+# 먼저 OPTIONS 프리플라이트가 나가는데, 허용해 주지 않으면 앱에는
+# "Failed to fetch"로만 보이고 서버 로그에는 아무것도 남지 않습니다.
+#
+# 로컬에서 로봇을 다루는 개발용 브리지라 출처를 열어 둡니다.
+# 외부에 노출할 서버라면 allow_origins를 실제 주소로 좁혀야 합니다.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -77,10 +99,11 @@ def send_robot_command(
         )
 
     try:
-        published_command = (
-            COMMAND_PUBLISHER.publish_command(
-                request.command
-            )
+        (
+            published_command,
+            subscriber_count,
+        ) = COMMAND_PUBLISHER.publish_command(
+            request.command
         )
     except ValueError as error:
         raise HTTPException(
@@ -88,10 +111,66 @@ def send_robot_command(
             detail=str(error),
         ) from error
 
+    # 발행 자체는 성공했지만 받는 노드가 없으면 로봇은 움직이지 않습니다.
+    # 앱에 성공으로만 알리면 원인을 찾을 단서가 사라지므로 구분해서 알립니다.
+    if subscriber_count == 0:
+        return CommandResponse(
+            success=False,
+            command=published_command,
+            message=(
+                "명령을 발행했지만 받는 노드가 없습니다. "
+                "motion_server가 실행 중인지 확인하세요."
+            ),
+            subscribers=0,
+        )
+
     return CommandResponse(
         success=True,
         command=published_command,
         message="open_manipulator 명령을 발행했습니다.",
+        subscribers=subscriber_count,
+    )
+
+
+# 손 모방을 시작하거나 정지합니다.
+# 앱의 "모방 시작 / 모방 정지" 버튼이 이 API를 부릅니다.
+@app.post(
+    "/robot/mimic",
+    response_model=CommandResponse,
+)
+def set_mimic(
+    request: MimicRequest,
+) -> CommandResponse:
+    if COMMAND_PUBLISHER is None:
+        raise HTTPException(
+            status_code=503,
+            detail="ROS2 Publisher가 준비되지 않았습니다.",
+        )
+
+    subscriber_count = (
+        COMMAND_PUBLISHER.publish_mimic_enable(
+            request.enabled
+        )
+    )
+
+    action = "시작" if request.enabled else "정지"
+
+    if subscriber_count == 0:
+        return CommandResponse(
+            success=False,
+            command=f"mimic_{request.enabled}",
+            message=(
+                "손 모방 노드가 실행 중이 아닙니다. "
+                "hand_mimic_node를 먼저 실행하세요."
+            ),
+            subscribers=0,
+        )
+
+    return CommandResponse(
+        success=True,
+        command=f"mimic_{request.enabled}",
+        message=f"손 모방을 {action}했습니다.",
+        subscribers=subscriber_count,
     )
 
 

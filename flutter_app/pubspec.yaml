@@ -43,7 +43,8 @@ dependencies:
   # 자율 작업 — 로봇과 대화하기 (STT → Claude → TTS).
   speech_to_text: ^7.0.0   # 음성 인식 (Android/iOS/web/macOS; Windows 미지원)
   flutter_tts: ^4.2.0      # 음성 합성 (Windows 지원)
-  http: ^1.2.2             # Claude API 호출
+  http: ^1.2.2             # Claude API 호출, 브리지 서버 명령 전송, MJPEG 수신
+  web: ^1.1.0              # Web에서 Gazebo 영상을 <img>로 띄울 때만 사용
 
 dev_dependencies:
   flutter_test:

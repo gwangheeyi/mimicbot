@@ -1,4 +1,5 @@
 import 'autonomous_skills.dart';
+import 'robot_command_service.dart';
 import 'robot_target.dart';
 
 /// 화면이 로봇에게 시키는 명령들.
@@ -6,9 +7,9 @@ import 'robot_target.dart';
 /// 세 메뉴가 모두 이 인터페이스만 보고 동작하므로, 실행 대상(Gazebo 가상 / OMX-AI 실물)이
 /// 바뀌어도 화면 코드는 그대로다. 대상별 구현은 아래 두 클래스에 있다.
 ///
-/// **아직 실제 통신은 하지 않는다.** rosbridge 주소와 양쪽 토픽 이름이 정해지지 않아,
-/// 지금은 각 메서드가 "무엇을 보낼지"만 문자열로 돌려주고 화면상으로만 진행한다.
-/// 실제 연결은 각 구현의 `// 연결 지점:` 주석 자리에 채우면 되고, 화면은 고치지 않아도 된다.
+/// **[playGesture]만 실제로 로봇에 나간다** (Gazebo 가상 대상). 나머지 메서드는 아직
+/// "무엇을 보낼지"만 문자열로 돌려주고 화면상으로만 진행한다. 실제 연결은 각 구현의
+/// `// 연결 지점:` 주석 자리에 채우면 되고, 화면은 고치지 않아도 된다.
 abstract class RobotBackend {
   const RobotBackend(this.target);
 
@@ -23,7 +24,7 @@ abstract class RobotBackend {
   /// 지정한 지점으로 이동. [x], [y]는 화면을 0~100으로 정규화한 좌표.
   Future<String> moveToPoint(int x, int y);
 
-  /// "안녕", "경례" 같은 미리 정의된 동작을 재생.
+  /// 미리 정의된 동작을 재생. [gesture]는 `RobotCommands.gestures`의 명령어.
   Future<String> playGesture(String gesture);
 
   /// 사람 손동작 따라하기 시작 / 정지.
@@ -47,6 +48,12 @@ abstract class RobotBackend {
 class GazeboLeRobotBackend extends RobotBackend {
   const GazeboLeRobotBackend() : super(RobotTarget.gazeboLeRobot);
 
+  /// 브리지 서버로 명령을 보내는 통로.
+  ///
+  /// 백엔드가 `const`라 인스턴스 필드를 둘 수 없어 클래스 하나에 하나만 둔다.
+  /// HTTP 연결을 재사용하므로 버튼을 연타해도 매번 새로 붙지 않는다.
+  static final RobotCommandService _commandService = RobotCommandService();
+
   @override
   Future<String> moveToPoint(int x, int y) async {
     // 연결 지점: Gazebo의 LeRobot에 목표 지점을 발행.
@@ -55,19 +62,32 @@ class GazeboLeRobotBackend extends RobotBackend {
 
   @override
   Future<String> playGesture(String gesture) async {
-    // 연결 지점: LeRobot 동작 프리미티브 재생 요청.
-    return line('동작 명령 → "$gesture"');
+    // 앱 → 브리지 서버(/robot/command) → /open_manipulator/motion_command
+    // → motion_server → /arm_controller/joint_trajectory → Gazebo.
+    final result = await _commandService.sendCommand(gesture);
+    if (!result.success) {
+      return line('동작 명령 실패 "$gesture" — ${result.message}');
+    }
+    return line('동작 명령 → "${result.command ?? gesture}"');
   }
 
   @override
   Future<String> startMimic() async {
-    // 연결 지점: 손 관절 → LeRobot 관절 리타게팅 스트림 시작.
+    // 브리지 서버 → /open_manipulator/mimic_enable → hand_mimic_node.
+    // 노드가 웹캠에서 손을 찾아 팔과 그리퍼를 직접 움직인다.
+    final result = await _commandService.setMimic(true);
+    if (!result.success) {
+      return line('실시간 모방 시작 실패 — ${result.message}');
+    }
     return line('실시간 모방 시작 — 가상 로봇이 따라합니다');
   }
 
   @override
   Future<String> stopMimic() async {
-    // 연결 지점: 리타게팅 스트림 정지.
+    final result = await _commandService.setMimic(false);
+    if (!result.success) {
+      return line('실시간 모방 정지 실패 — ${result.message}');
+    }
     return line('실시간 모방 정지');
   }
 

@@ -16,6 +16,9 @@ source install/setup.bash
 
 ros2 launch open_manipulator_bringup open_manipulator_x_gazebo.launch.py
 
+open_manipulator 를 git 에서 잘 가져와서 빌드를 잘 하면 쉽게 브링업 할 수 있다.
+
+
 
 2. Gazebo 영상을 ROS2로 연결
 
@@ -23,9 +26,13 @@ cd ~/mimicbot/ros2_ws
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 
+토픽 이름은 월드 파일에 정의된 것과 같아야 한다.
+open_manipulator_bringup/worlds/empty_world.sdf 의 <topic> 참고.
+지금 있는 이름 확인: gz topic -l | grep camera
+
 ros2 run ros_gz_bridge parameter_bridge \
-  /omx_front_camera/image@sensor_msgs/msg/Image@gz.msgs.Image \
-  /omx_front_camera/camera_info@sensor_msgs/msg/CameraInfo@gz.msgs.CameraInfo
+  /front_camera/image@sensor_msgs/msg/Image@gz.msgs.Image \
+  /front_camera/camera_info@sensor_msgs/msg/CameraInfo@gz.msgs.CameraInfo
 
 
 3. ROS2에서 카메라 토픽 확인
@@ -33,7 +40,7 @@ ros2 run ros_gz_bridge parameter_bridge \
 source /opt/ros/jazzy/setup.bash
 source ~/mimicbot/ros2_ws/install/setup.bash
 
-ros2 topic list -t | grep omx_front_camera
+ros2 topic list -t | grep front_camera
 
 4. web_video_server 실행
 
@@ -50,7 +57,7 @@ sudo apt install ros-jazzy-web-video-server
 
 5. Windows 브라우저에서 영상 확인
 
-http://localhost:8080/stream?topic=/omx_front_camera/image
+http://localhost:8080/stream?topic=/front_camera/image
 
 전체 토픽 선택 화면은:
 

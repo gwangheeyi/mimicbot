@@ -1,0 +1,6 @@
+1. open_manipulator bring up
+2. world 카메라 토픽발행
+3. motion server 실행
+4. bridge server 실행
+5. web video server 실행
+6. 앱 실행

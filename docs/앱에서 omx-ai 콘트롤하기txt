@@ -71,7 +71,7 @@ colcon build \
 source install/setup.bash
 
 동작 서버 실행
-ros2 run open_manipulator motion_server
+ros2 run open_manipulator_app_control motion_server 
 
 버튼 명령 테스트
 ros2 topic pub --once \
