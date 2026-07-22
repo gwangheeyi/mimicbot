@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
+import '../config/app_config.dart';
+import '../services/robot_command_service.dart';
 import '../services/robot_target.dart';
 import '../services/robot_target_scope.dart';
 import '../widgets/flow_diagram.dart';
@@ -27,6 +30,10 @@ class HomeMenuScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // ── Micky 깨우기 (모든 브링업·서비스 백그라운드 시작) ──
+              const _WakeButton(),
+              const SizedBox(height: 24),
+
               // ── 실행 대상 선택 (세 메뉴 공통) ────────────────────
               const _SectionTitle(
                 icon: Icons.hub,
@@ -287,6 +294,370 @@ class HomeMenuScreen extends StatelessWidget {
   }
 }
 
+/// "Micky 깨우기" 버튼.
+///
+/// 한 번 누르면 로봇을 쓰기 위해 필요한 브링업·서비스(Gazebo, 카메라 브리지,
+/// 모션 서버, 손 모방 노드, 웹 영상 서버)를 브리지 서버가 한꺼번에
+/// 백그라운드로 띄운다. 프로세스만 띄우고 바로 응답하므로 몇 초 안에 끝난다.
+///
+/// 이 버튼은 브리지 서버(:8000)가 이미 떠 있어야 동작한다. 브리지 서버가
+/// 나머지 서비스를 자식 프로세스로 실행한다.
+class _WakeButton extends StatefulWidget {
+  const _WakeButton();
+
+  @override
+  State<_WakeButton> createState() => _WakeButtonState();
+}
+
+class _WakeButtonState extends State<_WakeButton> {
+  bool _waking = false;
+  // 재우는 중인지 — 재우기 버튼에 진행 표시를 띄우고 버튼을 잠근다.
+  bool _sleeping = false;
+  // Micky가 깨어 있는지(마지막 깨우기가 성공했는지) — 아이콘·재우기 버튼 표시 기준.
+  bool _awake = false;
+  // 마지막 깨우기 결과의 서비스별 상세 로그(복사 대상).
+  String _log = '';
+  // 마지막 결과가 성공이었는지 — 로그 상자 색을 정한다.
+  bool _lastSuccess = true;
+
+  bool get _busy => _waking || _sleeping;
+
+  Future<void> _wake() async {
+    if (_busy) return;
+
+    // 지금 고른 대상의 컴퓨터를 깨운다. Gazebo 가상이면 내 컴, OMX-AI 실물이면
+    // 로봇이 연결된 다른 컴. 각 컴의 브리지 서버가 무엇을 띄울지는 그 컴에서 정한다.
+    final target = RobotTargetScope.of(context).value;
+    final service =
+        RobotCommandService(host: target.host, target: target.name);
+
+    setState(() => _waking = true);
+
+    final result = await service.wake();
+    service.dispose();
+
+    if (!mounted) return;
+    // 서버 메시지의 기본 이름(Micky)을 대상 이름(미키/맥시)으로 바꿔 보여 준다.
+    final message = result.message.replaceAll('Micky', target.robotName);
+    setState(() {
+      _waking = false;
+      _awake = result.success;
+      _lastSuccess = result.success;
+      // 상세 로그가 없으면 요약 메시지라도 보여 준다.
+      _log = result.log.isNotEmpty ? result.log : message;
+    });
+
+    _showResult(message, result.success);
+  }
+
+  // "미키 재우기" — 깨우기로 띄운 모든 서비스를 끈다.
+  Future<void> _sleep() async {
+    if (_busy) return;
+
+    final target = RobotTargetScope.of(context).value;
+    final service =
+        RobotCommandService(host: target.host, target: target.name);
+
+    setState(() => _sleeping = true);
+
+    final result = await service.sleep();
+    service.dispose();
+
+    if (!mounted) return;
+    final message = result.message.replaceAll('Micky', target.robotName);
+    setState(() {
+      _sleeping = false;
+      // 성공적으로 껐으면 다시 자는 상태로.
+      if (result.success) _awake = false;
+      _lastSuccess = result.success;
+      _log = result.log.isNotEmpty ? result.log : message;
+    });
+
+    _showResult(message, result.success);
+  }
+
+  void _showResult(String message, bool success) {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor:
+            success ? Colors.green.shade700 : Colors.red.shade700,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  Future<void> _copyLog() async {
+    await Clipboard.setData(ClipboardData(text: _log));
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('로그를 클립보드에 복사했습니다'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const color = Colors.amber;
+    // 지금 고른 대상 — 이 대상의 컴퓨터를 깨운다(가상=내 컴, 실물=로봇 컴).
+    final target = RobotTargetScope.of(context).value;
+    // 자는 중이면 달(수면) 아이콘, 깨어났으면 해(기상) 아이콘.
+    final stateIcon = _awake ? Icons.wb_sunny : Icons.bedtime;
+    // 대상에 따라 로봇 이름이 바뀐다. 가상=미키, OMX-AI 실물=맥시.
+    final name = target.robotName;
+    final title = _waking
+        ? '$name 깨우는 중…'
+        : (_awake ? '$name 깨어남' : '$name 깨우기');
+    final subtitle = _awake
+        ? '다시 누르면 꺼진 서비스만 다시 시작합니다 · ${target.label}(${target.host})'
+        : '${target.label} 컴퓨터(${target.host})의 브링업·서비스를 한꺼번에 시작합니다';
+
+    final wakeCard = Material(
+      color: color.withValues(alpha: 0.18),
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: _busy ? null : _wake,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: color.withValues(alpha: 0.7)),
+          ),
+          child: Row(
+            children: [
+              if (_waking)
+                const SizedBox(
+                  width: 30,
+                  height: 30,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 3,
+                    color: color,
+                  ),
+                )
+              else
+                Icon(stateIcon, size: 30, color: color),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color:
+                            Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (!_waking)
+                Icon(
+                  _awake ? Icons.check_circle : Icons.bolt,
+                  color: _awake ? Colors.green : color,
+                  size: 24,
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 깨어 있으면 오른쪽에 절반 크기(2:1)의 "미키 재우기" 버튼을 붙인다.
+        if (_awake)
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(flex: 2, child: wakeCard),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 1,
+                  child: _SleepButton(
+                    robotName: name,
+                    sleeping: _sleeping,
+                    onTap: _busy ? null : _sleep,
+                  ),
+                ),
+              ],
+            ),
+          )
+        else
+          SizedBox(width: double.infinity, child: wakeCard),
+
+        // ── 에러/실행 로그 (복사 가능) ──────────────────────────
+        if (_log.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          _WakeLogPanel(
+            log: _log,
+            isError: !_lastSuccess,
+            onCopy: _copyLog,
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// "<로봇> 재우기" 버튼. 깨어 있을 때만 깨우기 버튼 오른쪽에 절반 크기로 뜬다.
+/// 누르면 깨우기로 띄운 모든 서비스를 끈다. 대상에 따라 미키/맥시로 표시한다.
+class _SleepButton extends StatelessWidget {
+  const _SleepButton({
+    required this.robotName,
+    required this.sleeping,
+    required this.onTap,
+  });
+
+  /// 재울 로봇 이름(미키/맥시). 버튼 라벨에 쓴다.
+  final String robotName;
+  final bool sleeping;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    const color = Colors.indigo;
+    return Material(
+      color: color.withValues(alpha: 0.18),
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: color.withValues(alpha: 0.7)),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (sleeping)
+                const SizedBox(
+                  width: 26,
+                  height: 26,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 3,
+                    color: color,
+                  ),
+                )
+              else
+                const Icon(Icons.bedtime, size: 26, color: color),
+              const SizedBox(height: 6),
+              Text(
+                sleeping ? '재우는 중…' : '$robotName 재우기',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 깨우기 결과 로그 상자. 실패 시 빨간 테두리로 강조하고, 우측 상단 복사
+/// 버튼으로 전체 로그를 클립보드에 복사할 수 있다.
+class _WakeLogPanel extends StatelessWidget {
+  const _WakeLogPanel({
+    required this.log,
+    required this.isError,
+    required this.onCopy,
+  });
+
+  final String log;
+  final bool isError;
+  final VoidCallback onCopy;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = isError ? Colors.redAccent : Colors.green;
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: accent.withValues(alpha: 0.5)),
+      ),
+      padding: const EdgeInsets.fromLTRB(12, 8, 8, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                isError ? Icons.error_outline : Icons.receipt_long,
+                size: 16,
+                color: accent,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                isError ? '에러 로그' : '실행 로그',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: accent,
+                ),
+              ),
+              const Spacer(),
+              TextButton.icon(
+                onPressed: onCopy,
+                icon: const Icon(Icons.copy, size: 16),
+                label: const Text('복사'),
+                style: TextButton.styleFrom(
+                  foregroundColor: accent,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  minimumSize: const Size(0, 32),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          // 로그는 길 수 있으므로 스크롤 가능하고, 길게 눌러 선택·복사도 된다.
+          Container(
+            constraints: const BoxConstraints(maxHeight: 180),
+            width: double.infinity,
+            child: SingleChildScrollView(
+              child: SelectableText(
+                log,
+                style: const TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 12.5,
+                  height: 1.4,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// 실행 대상 선택 — 여기서 고른 대상으로 세 메뉴가 모두 동작한다.
 class _TargetSelector extends StatelessWidget {
   const _TargetSelector();
@@ -353,9 +724,35 @@ class _TargetSelector extends StatelessWidget {
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
               ),
-              // 실물 로봇일 때만 안전 안내를 띄운다.
+              // 실물 로봇(맥시)일 때: 서버 IP를 보여주고 바로 바꿀 수 있게 한다.
               if (selected.isPhysical) ...[
-                const SizedBox(height: 8),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Icon(Icons.lan, size: 16, color: selected.color),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        '맥시 서버 IP  ${AppConfig.maxiHost}:${AppConfig.robotServerPort}',
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.bold,
+                          fontFamily: 'monospace',
+                        ),
+                      ),
+                    ),
+                    TextButton.icon(
+                      onPressed: () => _editMaxiIp(context, controller),
+                      icon: const Icon(Icons.edit, size: 16),
+                      label: const Text('IP 변경'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: selected.color,
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
                 Row(
                   children: [
                     const Icon(Icons.warning_amber_rounded,
@@ -378,6 +775,63 @@ class _TargetSelector extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  /// 맥시(실물 로봇) 서버 IP를 입력받아 바꾼다. 재빌드 없이 즉시 적용된다.
+  /// 이후 모든 명령·영상이 이 IP의 브리지 서버로 나간다.
+  Future<void> _editMaxiIp(
+    BuildContext context,
+    RobotTargetController controller,
+  ) async {
+    final textController = TextEditingController(text: AppConfig.maxiHost);
+    final ip = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('맥시(실물 로봇) 서버 IP'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '실물 로봇이 연결된 컴퓨터의 IP를 입력하세요.\n'
+              '그 컴퓨터에서 hostname -I 로 확인할 수 있어요.',
+              style: TextStyle(fontSize: 12.5, height: 1.5),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: textController,
+              autofocus: true,
+              keyboardType: TextInputType.url,
+              decoration: const InputDecoration(
+                hintText: '예: 192.168.0.20',
+                prefixIcon: Icon(Icons.lan),
+                border: OutlineInputBorder(),
+              ),
+              onSubmitted: (v) => Navigator.of(ctx).pop(v),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(textController.text),
+            child: const Text('저장'),
+          ),
+        ],
+      ),
+    );
+    textController.dispose();
+
+    if (ip == null) return;
+    final trimmed = ip.trim();
+    if (trimmed.isEmpty) return;
+
+    AppConfig.maxiHost = trimmed;
+    // 이 IP를 쓰는 화면들(깨우기 버튼·배지 등)을 다시 그린다.
+    controller.refresh();
   }
 }
 

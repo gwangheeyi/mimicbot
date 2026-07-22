@@ -7,7 +7,7 @@ x는 화면 왼쪽이 0, y는 화면 위쪽이 0입니다.
 
 from math import hypot
 
-from open_manipulator_app_control.hand_mimic_config import (
+from hand_mimic_config import (
     ARM_BASE_POSE,
     ARM_UP_POSE,
     JOINT1_AT_LEFT,

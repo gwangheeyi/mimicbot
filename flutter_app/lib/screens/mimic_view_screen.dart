@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 
 import '../config/app_config.dart';
-import '../config/robot_commands.dart';
 import '../services/robot_backend.dart';
+import '../services/robot_command_service.dart';
 import '../services/robot_target_scope.dart';
 import '../services/tts_service.dart';
 import '../widgets/camera_stream_view.dart';
 import '../widgets/command_log_panel.dart';
+import '../widgets/robot_camera_view.dart';
 import '../widgets/robot_target_badge.dart';
 import '../widgets/zoomable_stream_view.dart';
 
@@ -46,6 +47,12 @@ class _MimicViewScreenState extends State<MimicViewScreen> {
   /// 미리 들고 있다가 화면을 떠날 때 이걸로 모방을 끈다.
   RobotBackend? _backend;
 
+  /// 현재 대상 컴퓨터의 카메라 확보/반환 통로.
+  ///
+  /// 이 화면에 들어오면 웹캠을 확보하고, 나갈 때 반환한다. 화면을 안 볼 때는
+  /// hand_mimic_node가 웹캠을 잡지 않아 다른 프로그램이 쓸 수 있다.
+  RobotCommandService? _cameraControl;
+
   static const String _greeting = '안녕 친구야. 내가 너의 행동을 따라 해 볼게!';
 
   @override
@@ -58,35 +65,59 @@ class _MimicViewScreenState extends State<MimicViewScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final target = RobotTargetScope.of(context).value;
     final backend = RobotTargetScope.of(context).backend;
     if (identical(backend, _backend)) return;
 
     // 화면을 보는 도중 실행 대상을 바꾸면(가상 ↔ 실물) 백엔드가 교체된다.
-    // 이전 대상이 계속 따라 하고 있으면 안 되므로 멈추고 준비 자세로 되돌린다.
+    // 이전 대상이 계속 따라 하고 있으면 안 되므로 멈추고 쉼 자세로 되돌린다.
+    // 실물(맥시)은 조용히 리더 위치로 가서 대기, 가상은 준비 자세. 카메라도 반환.
     final previous = _backend;
-    previous?.stopMimic().then((_) {
-      previous.playGesture(RobotCommands.ready);
-    });
+    previous?.stopMimic().then((_) => previous.restToLeader());
+    final previousCamera = _cameraControl;
+    previousCamera?.setCamera(false).then((_) => previousCamera.dispose());
+
     _backend = backend;
     if (_mimicking) setState(() => _mimicking = false);
+
+    if (target.isPhysical) {
+      // 맥시(실물): 들어오면 조용히 리더 위치로 가서 대기한다(자동 시작 안 함).
+      // 손 모방은 "모방 시작" 버튼으로 켠다. 웹캠은 그때 제어 서버가 잡는다.
+      _cameraControl = null;
+      backend.restToLeader();
+    } else {
+      // 미키(가상): 웹캠을 확보한 뒤 모방을 자동으로 켠다.
+      _cameraControl = RobotCommandService(host: target.host);
+      _cameraControl!.setCamera(true).then((_) => _autoStartMimic());
+    }
   }
 
-  /// 모방 시작/정지. 홈에서 고른 대상(Gazebo 가상 / OMX-AI 실물)이 따라한다.
-  Future<void> _toggle() async {
-    if (_busy) return;
+  /// 모방 시작/정지 버튼. 홈에서 고른 대상(Gazebo 가상 / OMX-AI 실물)이 따라한다.
+  Future<void> _toggle() => _setMimic(!_mimicking);
+
+  /// 모방을 [on] 상태로 맞춘다. 이미 그 상태면 아무것도 하지 않는다.
+  /// 버튼과 화면 진입 시 자동 시작이 함께 쓴다.
+  Future<void> _setMimic(bool on) async {
+    if (_busy || on == _mimicking) return;
     final backend = _backend;
     if (backend == null) return;
-    final next = !_mimicking;
     setState(() => _busy = true);
 
-    final status = next ? await backend.startMimic() : await backend.stopMimic();
+    final status = on ? await backend.startMimic() : await backend.stopMimic();
     if (!mounted) return;
     setState(() {
       // 노드가 꺼져 있으면 시작에 실패한다. 그때는 켜진 것처럼 보이면 안 된다.
-      _mimicking = status.contains('실패') ? _mimicking : next;
+      _mimicking = status.contains('실패') ? _mimicking : on;
       _log.insert(0, status);
       _busy = false;
     });
+  }
+
+  /// 화면에 들어오면(또는 대상이 바뀌면) 모방을 자동으로 켠다.
+  /// 웹캠을 확보한 뒤에 부른다. 시작에 실패하면 버튼으로 다시 켤 수 있다.
+  void _autoStartMimic() {
+    if (!mounted) return;
+    _setMimic(true);
   }
 
   @override
@@ -98,16 +129,26 @@ class _MimicViewScreenState extends State<MimicViewScreen> {
     // 순서가 중요하다. 두 요청을 한꺼번에 보내면 준비 자세가 먼저 도착하고
     // 노드가 그 뒤에 보낸 명령이 덮어쓸 수 있다. 정지 응답을 받은 뒤에 이어 보낸다.
     // 화면은 이미 사라진 뒤라 결과를 보여줄 곳이 없으므로 기다리지 않는다.
+    // 실물(맥시)은 조용히 리더 위치로 가서 대기, 가상(미키)은 준비 자세로.
     final backend = _backend;
-    backend?.stopMimic().then((_) {
-      backend.playGesture(RobotCommands.ready);
-    });
+    backend?.stopMimic().then((_) => backend.restToLeader());
+    // 화면을 떠나면 웹캠 장치를 반환한다. 요청을 보낸 뒤 통로를 닫는다.
+    final camera = _cameraControl;
+    camera?.setCamera(false).then((_) => camera.dispose());
     _tts.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    // 선택한 대상 컴퓨터의 영상 주소. 대상이 바뀌면 여기가 다시 그려진다.
+    final target = RobotTargetScope.of(context).value;
+    final host = target.host;
+    // 손 인식 영상: 실물(맥시)은 lerobot 제어 서버(:8100/hand_stream),
+    // 가상(미키)은 hand_mimic_node → web_video_server(:8080).
+    final handStreamUrl = target.isPhysical
+        ? AppConfig.lerobotHandStreamUrl(host)
+        : AppConfig.handCameraStreamUrl(host);
     return Scaffold(
       appBar: AppBar(
         title: const Text('실시간 모방'),
@@ -127,7 +168,7 @@ class _MimicViewScreenState extends State<MimicViewScreen> {
           // 위: 손 인식 영상 — hand_mimic_node가 관절을 그려 보낸다.
           Expanded(
             child: _StreamPane(
-              streamUrl: AppConfig.handCameraStreamUrl,
+              streamUrl: handStreamUrl,
               badge: '내 손동작 (인식 중)',
               badgeColor: Colors.teal,
               active: _mimicking,
@@ -136,16 +177,16 @@ class _MimicViewScreenState extends State<MimicViewScreen> {
             ),
           ),
           const Divider(height: 2, thickness: 2),
-          // 아래: Gazebo 로봇 — 위의 손을 따라 움직인다.
+          // 아래: 로봇 시점 — 위의 손을 따라 움직인다.
+          // 맥시(실물)=mediamtx WebRTC, 미키(가상)=Gazebo web_video MJPEG.
           Expanded(
             child: _StreamPane(
-              streamUrl: AppConfig.cameraStreamUrl,
+              view: RobotCameraView(target: target),
               badge: '로봇 모방',
               badgeColor: Colors.deepPurple,
               active: _mimicking,
               // 백엔드가 알려준 마지막 상태. 아직 시작 전이면 대기 중.
               statusText: _log.isEmpty ? '대기 중' : _log.first,
-              zoomable: false,
               log: _log,
             ),
           ),
@@ -164,16 +205,23 @@ class _MimicViewScreenState extends State<MimicViewScreen> {
 /// 영상 한 칸: 스트림 위에 라벨과 상태를 얹는다.
 class _StreamPane extends StatelessWidget {
   const _StreamPane({
-    required this.streamUrl,
+    this.streamUrl,
+    this.view,
     required this.badge,
     required this.badgeColor,
     required this.active,
     required this.statusText,
-    required this.zoomable,
+    this.zoomable = false,
     this.log,
-  });
+  }) : assert(streamUrl != null || view != null,
+            'streamUrl 또는 view 중 하나는 있어야 한다');
 
-  final String streamUrl;
+  /// MJPEG 스트림 주소(view가 없을 때 이걸로 영상을 그린다).
+  final String? streamUrl;
+
+  /// 직접 그릴 영상 위젯(주면 streamUrl 대신 이걸 쓴다 — 예: WebRTC iframe).
+  final Widget? view;
+
   final String badge;
   final Color badgeColor;
   final bool active;
@@ -193,10 +241,12 @@ class _StreamPane extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          if (zoomable)
-            ZoomableStreamView(streamUrl: streamUrl)
+          if (view != null)
+            view!
+          else if (zoomable)
+            ZoomableStreamView(streamUrl: streamUrl!)
           else
-            CameraStreamView(streamUrl: streamUrl),
+            CameraStreamView(streamUrl: streamUrl!),
           Positioned(
             top: 12,
             left: 12,

@@ -20,6 +20,10 @@ class RobotTargetController extends ValueNotifier<RobotTarget> {
     _backend = RobotBackend.create(target);
     super.value = target;
   }
+
+  /// 대상은 그대로지만 설정(예: 맥시 IP)이 바뀌었을 때, 이 값을 쓰는 화면들을
+  /// 다시 그리게 한다.
+  void refresh() => notifyListeners();
 }
 
 /// [RobotTargetController]를 앱 전체에서 꺼내 쓰게 해 주는 스코프.

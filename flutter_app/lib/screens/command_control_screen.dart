@@ -1,13 +1,11 @@
 import 'package:flutter/material.dart';
 
-import '../config/app_config.dart';
 import '../config/robot_commands.dart';
-import '../services/claude_service.dart';
 import '../services/robot_backend.dart';
 import '../services/robot_target_scope.dart';
 import '../services/tts_service.dart';
-import '../widgets/camera_stream_view.dart';
 import '../widgets/command_log_panel.dart';
+import '../widgets/robot_camera_view.dart';
 import '../widgets/robot_target_badge.dart';
 
 /// 메뉴 1 — 동작 명령.
@@ -34,20 +32,18 @@ class _CommandControlScreenState extends State<CommandControlScreen> {
     RobotCommands.left: Icons.arrow_back,
     RobotCommands.right: Icons.arrow_forward,
     RobotCommands.up: Icons.arrow_upward,
+    RobotCommands.attention: Icons.straighten,
+    RobotCommands.salute: Icons.back_hand,
   };
 
   /// 진입 시 손 모방을 한 번 껐는지. 화면당 한 번이면 충분하다.
   bool _mimicStopped = false;
 
-  String get _greeting =>
-      '안녕, 나는 ${ClaudeService.robotName}야. 네가 버튼을 누르면 내가 따라해 볼게!';
-
-  @override
-  void initState() {
-    super.initState();
-    // 진입 시 인사말.
-    _tts.speak(_greeting);
-  }
+  /// 진입 인사말. 지금 고른 대상의 이름(미키/맥시)으로 자기소개한다.
+  /// 맥시로 테스트하면 "안녕, 나는 맥시야 …" 로 인사한다.
+  String _greeting(BuildContext context) =>
+      '안녕, 나는 ${RobotTargetScope.of(context).value.robotName}야. '
+      '네가 버튼을 누르면 내가 따라해 볼게!';
 
   @override
   void didChangeDependencies() {
@@ -55,6 +51,8 @@ class _CommandControlScreenState extends State<CommandControlScreen> {
     if (_mimicStopped) return;
     _mimicStopped = true;
 
+    // 진입 시 인사말(대상 이름 반영). context가 준비된 이 시점에 말한다.
+    _tts.speak(_greeting(context));
     _resetToReady(RobotTargetScope.of(context).backend);
   }
 
@@ -113,7 +111,7 @@ class _CommandControlScreenState extends State<CommandControlScreen> {
           // 브라우저는 사용자가 누르기 전에는 소리를 막기도 한다.
           // 이 버튼은 확실한 사용자 동작이라 그 경우에도 소리가 난다.
           IconButton(
-            onPressed: () => _tts.speak(_greeting),
+            onPressed: () => _tts.speak(_greeting(context)),
             icon: const Icon(Icons.volume_up),
             tooltip: '인사말 다시 듣기',
           ),
@@ -143,9 +141,10 @@ class _CommandControlScreenState extends State<CommandControlScreen> {
                       child: Stack(
                         fit: StackFit.expand,
                         children: [
-                          // Gazebo 카메라 영상 (web_video_server MJPEG).
-                          const CameraStreamView(
-                            streamUrl: AppConfig.cameraStreamUrl,
+                          // 로봇 시점 카메라. 맥시(실물)=mediamtx WebRTC,
+                          // 미키(가상)=Gazebo web_video MJPEG.
+                          RobotCameraView(
+                            target: RobotTargetScope.of(context).value,
                           ),
                           if (_target != null)
                             Positioned(

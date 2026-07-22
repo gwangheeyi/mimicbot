@@ -7,15 +7,17 @@ import pytest
 
 from open_manipulator_app_control.hand_metrics import (
     arm_joint_positions,
+    base_arm_pose,
     gripper_position,
     pinch_openness,
     smooth,
 )
 from open_manipulator_app_control.hand_mimic_config import (
+    ARM_BASE_POSE,
+    ARM_UP_POSE,
     JOINT1_AT_LEFT,
     JOINT1_AT_RIGHT,
-    JOINT2_AT_BOTTOM,
-    JOINT2_AT_TOP,
+    MIMIC_START_JOINT1,
 )
 
 
@@ -69,27 +71,43 @@ def test_벌린_만큼_그리퍼가_벌어진다():
     assert gripper_position(0.5, -0.01, 0.019) == pytest.approx(0.0045)
 
 
-def test_손목_좌우가_joint1로_상하가_joint2로_간다():
+def test_손목_좌우는_joint1로_손을_올리면_팔이_선다():
     left = arm_joint_positions(0.0, 0.5)
     right = arm_joint_positions(1.0, 0.5)
+    # y = 0(맨 위)이면 완전히 올린 자세, y >= 0.5면 기본 자세(바닥).
     top = arm_joint_positions(0.5, 0.0)
     bottom = arm_joint_positions(0.5, 1.0)
 
     assert left[0] == pytest.approx(JOINT1_AT_LEFT)
     assert right[0] == pytest.approx(JOINT1_AT_RIGHT)
-    assert top[1] == pytest.approx(JOINT2_AT_TOP)
-    assert bottom[1] == pytest.approx(JOINT2_AT_BOTTOM)
+    # 손을 올리면(top) joint2/3/4가 올린 자세로, 내리면(bottom) 기본 자세로.
+    assert top[1:] == pytest.approx(ARM_UP_POSE)
+    assert bottom[1:] == pytest.approx(ARM_BASE_POSE)
 
     # 관절은 항상 네 개여야 컨트롤러가 받습니다.
     assert len(left) == 4
 
 
-def test_화면_밖_좌표는_관절_한계를_넘지_않는다():
-    # 손이 화면 가장자리를 벗어나면 mediapipe가 0~1 밖의 값을 주기도 합니다.
+def test_손을_내려도_기본_자세_밑으로_떨어지지_않는다():
+    # 화면 아래 절반(y >= 0.5)은 모두 기본 90도 자세로 유지됩니다.
+    # 예전처럼 팔이 아래로 뚝 떨어지지 않아야 합니다.
+    middle = arm_joint_positions(0.5, 0.5)
+    low = arm_joint_positions(0.5, 1.0)
+    # mediapipe가 0~1 밖의 값을 줘도 기본 자세를 넘지 않습니다.
     beyond = arm_joint_positions(-0.5, 1.8)
 
+    assert middle[1:] == pytest.approx(ARM_BASE_POSE)
+    assert low[1:] == pytest.approx(ARM_BASE_POSE)
+    assert beyond[1:] == pytest.approx(ARM_BASE_POSE)
     assert beyond[0] == pytest.approx(JOINT1_AT_LEFT)
-    assert beyond[1] == pytest.approx(JOINT2_AT_BOTTOM)
+
+
+def test_시작_자세는_왼쪽_45도에서_시작한다():
+    base = base_arm_pose()
+
+    # joint1은 왼쪽 45도(오른손잡이 대비), joint2/3/4는 기본 자세여야 합니다.
+    assert base[0] == pytest.approx(MIMIC_START_JOINT1)
+    assert base[1:] == pytest.approx(ARM_BASE_POSE)
 
 
 def test_첫_프레임은_그대로_이후는_섞인다():

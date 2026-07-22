@@ -1,12 +1,19 @@
 from threading import Lock
+from typing import Any
 
 import rclpy
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 from std_msgs.msg import Bool
 from std_msgs.msg import String
+from trajectory_msgs.msg import JointTrajectory
+from trajectory_msgs.msg import JointTrajectoryPoint
 
 from open_manipulator_app_bridge.config import load_config
+
+
+# 팔 관절 이름. 궤적 메시지의 positions 순서와 일치해야 합니다.
+ARM_JOINT_NAMES = ["joint1", "joint2", "joint3", "joint4"]
 
 
 class OmxCommandPublisher:
@@ -42,6 +49,35 @@ class OmxCommandPublisher:
             ),
             10,
         )
+
+        # 카메라 확보/반환. 실시간 모방 화면 진입/이탈에 맞춰 hand_mimic_node가
+        # 웹캠을 열고 닫도록 신호를 보냅니다.
+        self._camera_publisher = self._node.create_publisher(
+            Bool,
+            ros_config.get(
+                "camera_enable_topic",
+                "/open_manipulator/camera_enable",
+            ),
+            10,
+        )
+
+        # 춤처럼 여러 자세를 이어 붙인 궤적을 팔 컨트롤러로 바로 보냅니다.
+        # 대상마다 팔 궤적 토픽이 다를 수 있어(미키=/arm_controller, 맥시=/leader),
+        # 토픽별로 Publisher를 하나씩 만들어 두고 발행 시 대상에 맞는 걸 고릅니다.
+        self._default_arm_topic = ros_config.get(
+            "arm_command_topic",
+            "/arm_controller/joint_trajectory",
+        )
+        self._arm_topic_by_target = dict(
+            ros_config.get("arm_command_topic_by_target", {}) or {}
+        )
+        self._trajectory_publishers: dict[str, Any] = {}
+        for topic in {self._default_arm_topic, *self._arm_topic_by_target.values()}:
+            self._trajectory_publishers[topic] = self._node.create_publisher(
+                JointTrajectory,
+                topic,
+                10,
+            )
 
         self._executor = SingleThreadedExecutor()
         self._executor.add_node(self._node)
@@ -108,6 +144,67 @@ class OmxCommandPublisher:
 
         self._node.get_logger().info(
             f"손 모방 {'시작' if enabled else '정지'} "
+            f"(구독자 {subscriber_count})"
+        )
+
+        return subscriber_count
+
+    # 카메라를 확보(True)하거나 반환(False)합니다.
+    # 실시간 모방 화면에 들어오면 True, 나가면 False가 전달됩니다.
+    # 듣고 있는 노드 수를 함께 돌려주어, hand_mimic_node가 꺼져 있으면 앱이
+    # 알 수 있게 합니다.
+    def publish_camera_enable(self, enabled: bool) -> int:
+        message = Bool()
+        message.data = enabled
+
+        with self._publish_lock:
+            self._camera_publisher.publish(message)
+            self._executor.spin_once(timeout_sec=0.05)
+            subscriber_count = (
+                self._camera_publisher.get_subscription_count()
+            )
+
+        self._node.get_logger().info(
+            f"카메라 {'확보' if enabled else '반환'} "
+            f"(구독자 {subscriber_count})"
+        )
+
+        return subscriber_count
+
+    # 여러 키프레임(시각 t와 관절 각도)을 하나의 궤적으로 묶어 팔 컨트롤러로
+    # 발행합니다. 춤처럼 정해 둘 수 없는 연속 동작을 한 번에 보낼 때 씁니다.
+    # target(대상 enum 이름)에 맞는 토픽으로 보냅니다. 없으면 기본 토픽(미키).
+    # 듣는 컨트롤러 수를 함께 돌려주어, 받는 쪽이 없으면 앱이 알 수 있게 합니다.
+    def publish_trajectory(
+        self,
+        keyframes: list[dict],
+        target: str | None = None,
+    ) -> int:
+        topic = self._arm_topic_by_target.get(target, self._default_arm_topic)
+        publisher = self._trajectory_publishers[topic]
+
+        message = JointTrajectory()
+        message.joint_names = ARM_JOINT_NAMES
+
+        for frame in keyframes:
+            point = JointTrajectoryPoint()
+            point.positions = [float(value) for value in frame["positions"]]
+
+            time_seconds = float(frame["t"])
+            point.time_from_start.sec = int(time_seconds)
+            point.time_from_start.nanosec = int(
+                (time_seconds - int(time_seconds)) * 1e9
+            )
+
+            message.points.append(point)
+
+        with self._publish_lock:
+            publisher.publish(message)
+            self._executor.spin_once(timeout_sec=0.05)
+            subscriber_count = publisher.get_subscription_count()
+
+        self._node.get_logger().info(
+            f"춤 궤적 발행({topic}): 키프레임 {len(keyframes)}개 "
             f"(구독자 {subscriber_count})"
         )
 

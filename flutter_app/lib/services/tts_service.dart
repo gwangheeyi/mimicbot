@@ -178,6 +178,15 @@ class TtsService {
     await _tts.setLanguage('ko-KR');
     await _tts.setSpeechRate(kSpeechRate);
     await _tts.setPitch(_pitch);
+    await _tts.setVolume(1.0); // 크롬에서 볼륨을 확실히 최대로 둔다.
+
+    // 크롬(Web Speech API)에서는 speak가 '발화가 끝날 때' 완료되도록 한다.
+    // 이렇게 해야 "말하는 중" 표시와 다음 발화 순서가 실제 재생과 맞는다.
+    // 네이티브(Windows/안드로이드)는 기본값(시작 후 바로 반환)을 유지해야
+    // 무음 음성 감지·후보 교체 로직(_speakOnce)이 그대로 동작한다.
+    if (kIsWeb) {
+      await _tts.awaitSpeakCompletion(true);
+    }
 
     // 말이 왜 안 나오는지 알 수 있는 곳은 여기뿐이다. 브라우저는 소리를 막아도
     // 예외를 던지지 않고 조용히 넘어가는 경우가 많다.
@@ -206,15 +215,40 @@ class TtsService {
   ///
   /// 고른 음성이 소리를 못 내면 다음 후보로 바꿔 다시 시도한다. 브라우저나 기기에
   /// 따라 목록에는 있어도 실제로는 재생되지 않는 음성이 있기 때문이다.
-  Future<void> speak(String text) async {
-    if (text.trim().isEmpty) return;
+  /// 소리가 나기 시작한 음성이 있으면 true, 모든 음성이 무음이면 false.
+  Future<bool> speak(String text) async {
+    if (text.trim().isEmpty) return false;
     try {
       await _ensure();
+
+      // ── 크롬(Web Speech API) 전용 경로 ─────────────────────────────
+      // 브라우저의 음성 합성은 네이티브와 습성이 달라 따로 다룬다.
+      //   1) 재생 중(state=playing)에는 새 speak가 조용히 무시된다. 그래서
+      //      말하는 중이면 먼저 멈춰(취소) 큐를 비운다.
+      //   2) 아무것도 말하지 않을 때 취소(cancel)한 직후 speak를 하면 그 발화가
+      //      무시되는 크롬 버그가 있어, '말하는 중일 때만' 취소한다.
+      //   3) awaitSpeakCompletion(true) 덕분에 speak는 발화 끝에 완료된다. 다만
+      //      오류가 나면 완료 신호가 안 와 멈출 수 있어, 타임아웃으로 빠져나온다.
+      //   4) 브라우저는 사용자가 페이지를 한 번 탭·클릭한 뒤에야 소리를 허용한다.
+      if (kIsWeb) {
+        if (_speaking) {
+          try {
+            await _tts.stop();
+          } catch (_) {}
+          await Future<void>.delayed(const Duration(milliseconds: 150));
+        }
+        try {
+          await _tts.speak(text).timeout(_webSpeakBudget(text));
+        } on TimeoutException {
+          // 완료 신호가 늦거나 오지 않아도 재생은 진행됐다고 보고 넘어간다.
+        }
+        return true;
+      }
 
       // 후보를 한 바퀴 돌 때까지, 소리가 나는 음성을 찾는다.
       final attempts = _voices.isEmpty ? 1 : _voices.length;
       for (var attempt = 0; attempt < attempts; attempt++) {
-        if (await _speakOnce(text)) return;
+        if (await _speakOnce(text)) return true;
 
         if (attempt < attempts - 1) {
           _voiceIndex = (_voiceIndex + 1) % _voices.length;
@@ -225,10 +259,20 @@ class TtsService {
 
       debugPrint('[MimicBot.tts] 모든 음성이 소리를 내지 못했습니다. '
           '브라우저나 기기의 음성 합성이 동작하지 않는 상태입니다.');
+      return false;
     } catch (e, st) {
       debugPrint('[MimicBot.tts] speak 실패: $e');
       debugPrint('$st');
+      return false;
     }
+  }
+
+  /// 웹에서 speak 완료를 기다릴 최대 시간. 발화가 끝나면 그 전에 완료되고,
+  /// 이 시간은 완료 신호가 오지 않을 때 멈추지 않도록 하는 안전장치다.
+  /// 글자 수에 비례해 넉넉히 잡되 지나치게 길지 않게 상한을 둔다.
+  Duration _webSpeakBudget(String text) {
+    final ms = 2000 + text.trim().length * 220;
+    return Duration(milliseconds: ms.clamp(2000, 30000));
   }
 
   /// 지금 음성으로 한 번 말해 본다. 소리가 시작되면 true.

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../config/app_config.dart';
 import '../config/robot_commands.dart';
 import '../services/robot_command_service.dart';
 
@@ -18,7 +19,7 @@ class OmxControlScreen extends StatefulWidget {
 class _OmxControlScreenState
     extends State<OmxControlScreen> {
   final RobotCommandService _commandService =
-      RobotCommandService();
+      RobotCommandService(host: AppConfig.omxAiHost);
 
   bool _isSending = false;
   String _statusMessage = '명령 대기 중';

@@ -24,6 +24,7 @@ from std_msgs.msg import Bool
 
 from open_manipulator_app_control.hand_metrics import (
     arm_joint_positions,
+    base_arm_pose,
     gripper_position,
     pinch_openness,
     smooth,
@@ -31,6 +32,7 @@ from open_manipulator_app_control.hand_metrics import (
 )
 from open_manipulator_app_control.hand_mimic_config import (
     ANNOTATED_IMAGE_TOPIC,
+    CAMERA_ENABLE_TOPIC,
     CAMERA_HEIGHT,
     CAMERA_INDEX,
     CAMERA_WIDTH,
@@ -58,7 +60,7 @@ class HandMimicNode(Node):
         super().__init__("open_manipulator_hand_mimic")
 
         self.declare_parameter("camera_index", CAMERA_INDEX)
-        camera_index = (
+        self.camera_index = (
             self.get_parameter("camera_index")
             .get_parameter_value()
             .integer_value
@@ -79,6 +81,14 @@ class HandMimicNode(Node):
             10,
         )
 
+        # 실시간 모방 화면에 들어오면 켜서 웹캠을 열고, 나가면 꺼서 반환합니다.
+        self.camera_enable_subscription = self.create_subscription(
+            Bool,
+            CAMERA_ENABLE_TOPIC,
+            self._camera_enable_callback,
+            10,
+        )
+
         self.gripper_client = ActionClient(
             self,
             GripperCommand,
@@ -92,7 +102,10 @@ class HandMimicNode(Node):
         self.seconds_since_command = 0.0
         self.frame_timestamp_ms = 0
 
-        self.camera = self._open_camera(camera_index)
+        # 웹캠은 시작하자마자 열지 않습니다. 실시간 모방 화면에 들어와
+        # 카메라 확보 신호가 올 때 열고, 나가면 반환합니다. 이렇게 하면 화면을
+        # 안 볼 때는 장치를 잡지 않아 다른 프로그램이 쓸 수 있습니다.
+        self.camera: cv2.VideoCapture | None = None
         self.landmarker = self._create_landmarker()
 
         self.timer = self.create_timer(
@@ -102,24 +115,45 @@ class HandMimicNode(Node):
 
         self.get_logger().info(
             "손 모방 노드가 시작되었습니다. "
-            "앱에서 '모방 시작'을 누르면 로봇이 따라 합니다."
+            "앱의 실시간 모방 화면에 들어오면 웹캠을 엽니다."
         )
 
-    # 웹캠을 열고 해상도를 맞춥니다.
-    # 장치를 열지 못하면 원인을 알 수 있도록 예외를 그대로 올립니다.
-    def _open_camera(self, camera_index: int) -> cv2.VideoCapture:
-        camera = cv2.VideoCapture(camera_index)
+    # 앱에서 카메라 확보/반환 신호를 받습니다.
+    # 실시간 모방 화면에 들어오면 True, 나가면 False가 옵니다.
+    def _camera_enable_callback(self, message: Bool) -> None:
+        if message.data:
+            self._acquire_camera()
+        else:
+            self._release_camera()
+
+    # 웹캠을 열고 해상도를 맞춥니다. 이미 열려 있으면 그대로 둡니다.
+    # 열지 못하면(다른 프로그램이 쓰는 중 등) 노드를 죽이지 않고 경고만 남깁니다.
+    def _acquire_camera(self) -> None:
+        if self.camera is not None and self.camera.isOpened():
+            return
+
+        camera = cv2.VideoCapture(self.camera_index)
 
         if not camera.isOpened():
-            raise RuntimeError(
-                f"웹캠을 열 수 없습니다 (camera_index={camera_index}). "
+            camera.release()
+            self.camera = None
+            self.get_logger().warning(
+                f"웹캠을 열 수 없습니다 (camera_index={self.camera_index}). "
                 f"다른 프로그램이 쓰고 있지 않은지 확인하세요."
             )
+            return
 
         camera.set(cv2.CAP_PROP_FRAME_WIDTH, CAMERA_WIDTH)
         camera.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA_HEIGHT)
+        self.camera = camera
+        self.get_logger().info("웹캠을 열었습니다.")
 
-        return camera
+    # 웹캠 장치를 반환합니다. 실시간 모방 화면을 나갈 때 호출됩니다.
+    def _release_camera(self) -> None:
+        if self.camera is not None:
+            self.camera.release()
+            self.camera = None
+            self.get_logger().info("웹캠을 반환했습니다.")
 
     # mediapipe 손 인식기를 만듭니다.
     # 모델 파일은 패키지 share/models 에 설치되어 있습니다.
@@ -155,7 +189,18 @@ class HandMimicNode(Node):
 
         self.enabled = message.data
 
-        if not self.enabled:
+        if self.enabled:
+            # 모방하려면 웹캠이 필요합니다. 카메라 확보 신호를 놓쳤더라도
+            # 여기서 한 번 더 열어 둡니다.
+            self._acquire_camera()
+            # 기본 90도 자세에서 시작합니다. 이렇게 해 두면 첫 프레임에서 손 위치로
+            # 팔이 뚝 떨어지지 않고, 기본 자세에서 부드럽게 손을 따라가기 시작합니다.
+            self.smoothed_joints = base_arm_pose()
+            self.motion_controller.move_to(
+                self.smoothed_joints,
+                COMMAND_DURATION_SECONDS,
+            )
+        else:
             self.smoothed_joints = None
             self.gripper_openness = None
 
@@ -167,6 +212,10 @@ class HandMimicNode(Node):
     # 관절을 그려 넣은 영상은 켜짐 여부와 상관없이 항상 내보내
     # 사용자가 인식이 잘 되는지 미리 보고 시작할 수 있게 합니다.
     def _process_frame(self) -> None:
+        # 카메라가 닫혀 있으면(화면을 안 보는 중) 아무것도 하지 않습니다.
+        if self.camera is None:
+            return
+
         read_ok, frame = self.camera.read()
 
         if not read_ok:

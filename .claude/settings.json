@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(time curl -sS -m 120 -X POST http://127.0.0.1:8000/robot/chat -H 'Content-Type: application/json' -d '{\"message\":\"너 이름이 뭐야? 뭐 할 수 있어?\"}')",
+      "Bash(python3 -c \"import sys,json;d=json.load\\(sys.stdin\\);print\\('success=',d['success']\\);print\\('대답:', d['reply']\\)\")",
+      "Bash(time curl -sS -m 90 -X POST http://127.0.0.1:8000/robot/chat -H 'Content-Type: application/json' -d '{\"message\":\"너 이름이 뭐야? 뭐 할 수 있어?\"}')",
+      "Bash(python3 -c \"import sys,json;d=json.load\\(sys.stdin\\);print\\('대답:',d['reply']\\)\")",
+      "Bash(curl -sS -m 90 -X POST http://127.0.0.1:8000/robot/chat -H 'Content-Type: application/json' -d '{\"message\":\"하늘은 왜 파래?\"}')",
+      "Bash(curl -sS -m 30 -X POST http://127.0.0.1:8000/robot/wake -H 'Content-Type: application/json' -d '{}')",
+      "Bash(python3 -c \"import sys,json;d=json.load\\(sys.stdin\\);print\\(d['message']\\);[print\\('  ',s['status'],s['label']\\) for s in d['services']]\")",
+      "Bash(curl -sS -m 3 http://127.0.0.1:8000/robot/wake/status)",
+      "Bash(python3 -c \"import sys,json;d=json.load\\(sys.stdin\\);[print\\('  ',s['status'],s['label']\\) for s in d['services']]\")",
+      "Bash(bash -c 'unset PYTHONPATH; source ~/venv/il/bin/activate *)",
+      "Bash(curl -s -m 2 http://127.0.0.1:8000/health)",
+      "Bash(pkill -9 -f \"app_bridge_serv[e]r\")",
+      "Bash(./scripts/start_mimicbot.sh)",
+      "Bash(break)",
+      "Bash(curl -s -m 8 -X POST http://127.0.0.1:8000/robot/mimic -H 'Content-Type: application/json' -d '{\"enabled\":true,\"target\":\"omxAi\"}')",
+      "Bash(python3 -c \"import json,sys;d=json.load\\(sys.stdin\\);print\\('success:',d['success'],'| msg:',d['message'][:75]\\)\")",
+      "Bash(curl -s -m 8 -X POST http://127.0.0.1:8000/robot/mimic -H 'Content-Type: application/json' -d '{\"enabled\":true,\"target\":\"gazeboLeRobot\"}')",
+      "Bash(python3 -c \"import json,sys;d=json.load\\(sys.stdin\\);print\\('success:',d['success'],'| msg:',d['message'][:60]\\)\")",
+      "Bash(timeout 60 bash -c 'unset PYTHONPATH; source ~/venv/il/bin/activate; python -c \" *)",
+      "Bash(bash -c 'unset PYTHONPATH; source ~/venv/il/bin/activate; python -c \"import ast; ast.parse\\(open\\(\\\\\"omx_control_server.py\\\\\"\\).read\\(\\)\\); print\\(\\\\\"제어 서버 문법 OK\\\\\"\\)\"')",
+      "Bash(bash -c 'unset PYTHONPATH; source ~/venv/il/bin/activate; for f in hand_mimic_lerobot.py omx_control_server.py; do python -c \"import ast; ast.parse\\(open\\(\\\\\"$f\\\\\"\\).read\\(\\)\\)\" && echo \"OK: $f\"; done')",
+      "Bash(timeout 40 bash -c 'unset PYTHONPATH; source ~/venv/il/bin/activate; python -c \" *)",
+      "Bash(bash -c 'unset PYTHONPATH; source ~/venv/il/bin/activate; python -c \"import ast; ast.parse\\(open\\(\\\\\"scripts/lerobot/omx_control_server.py\\\\\"\\).read\\(\\)\\); print\\(\\\\\"OK\\\\\"\\)\"')",
+      "Bash(python3 -c ' *)"
+    ]
+  }
+}

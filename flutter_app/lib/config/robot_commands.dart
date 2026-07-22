@@ -11,6 +11,12 @@ class RobotCommands {
   static const String closeGripper = 'close_gripper';
   static const String stop = 'stop';
 
+  /// 차렷: 팔을 일직선으로 곧게 세운 자세.
+  static const String attention = 'attention';
+
+  /// 경례: 곧게 세운 뒤 맨 끝 관절을 90도 내린 자세.
+  static const String salute = 'salute';
+
   /// 동작 감지로 인식할 동작들.
   ///
   /// ROS2 쪽 `robot_config.py`의 `MOTION_POSITIONS`에 관절값이 등록된 동작만 넣는다.
@@ -21,6 +27,8 @@ class RobotCommands {
     RobotGesture('왼쪽', left),
     RobotGesture('오른쪽', right),
     RobotGesture('업', up),
+    RobotGesture('차렷', attention),
+    RobotGesture('경례', salute),
   ];
 }
 
