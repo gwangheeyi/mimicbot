@@ -5,6 +5,7 @@ import rclpy
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 from std_msgs.msg import Bool
+from std_msgs.msg import Int32
 from std_msgs.msg import String
 from trajectory_msgs.msg import JointTrajectory
 from trajectory_msgs.msg import JointTrajectoryPoint
@@ -57,6 +58,17 @@ class OmxCommandPublisher:
             ros_config.get(
                 "camera_enable_topic",
                 "/open_manipulator/camera_enable",
+            ),
+            10,
+        )
+
+        # 사용할 웹캠 장치 번호. 카메라가 여러 대일 때 앱에서 고른 번호를
+        # hand_mimic_node로 보내 그 장치로 다시 열게 합니다.
+        self._camera_index_publisher = self._node.create_publisher(
+            Int32,
+            ros_config.get(
+                "camera_index_topic",
+                "/open_manipulator/camera_index",
             ),
             10,
         )
@@ -167,6 +179,25 @@ class OmxCommandPublisher:
         self._node.get_logger().info(
             f"카메라 {'확보' if enabled else '반환'} "
             f"(구독자 {subscriber_count})"
+        )
+
+        return subscriber_count
+
+    # 사용할 웹캠 장치 번호(/dev/videoN의 N)를 hand_mimic_node로 보냅니다.
+    # 듣고 있는 노드 수를 함께 돌려주어, 노드가 꺼져 있으면 앱이 알 수 있게 합니다.
+    def publish_camera_index(self, index: int) -> int:
+        message = Int32()
+        message.data = int(index)
+
+        with self._publish_lock:
+            self._camera_index_publisher.publish(message)
+            self._executor.spin_once(timeout_sec=0.05)
+            subscriber_count = (
+                self._camera_index_publisher.get_subscription_count()
+            )
+
+        self._node.get_logger().info(
+            f"웹캠 장치 번호 {index} 발행 (구독자 {subscriber_count})"
         )
 
         return subscriber_count

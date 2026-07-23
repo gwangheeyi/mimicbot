@@ -30,6 +30,11 @@ MIMIC_ENABLE_TOPIC = "/open_manipulator/mimic_enable"
 # 쓸 수 있습니다.
 CAMERA_ENABLE_TOPIC = "/open_manipulator/camera_enable"
 
+# 사용할 웹캠 장치 번호(/dev/videoN의 N). 앱의 카메라 선택이 브리지를 거쳐 이
+# 토픽으로 들어오면, 노드가 그 번호로 웹캠을 다시 엽니다. 컴퓨터에 카메라가
+# 여러 대 붙어 있을 때(내장캠·USB웹캠 등) 어느 것으로 모방할지 고르는 데 씁니다.
+CAMERA_INDEX_TOPIC = "/open_manipulator/camera_index"
+
 
 # --- 손 인식 모델 -------------------------------------------------------
 

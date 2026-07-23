@@ -35,6 +35,15 @@ class WakeResult {
 }
 
 
+// 손 모방에 쓸 수 있는 웹캠 하나. index는 /dev/videoN의 N, name은 사람이 읽을 이름.
+class CameraInfo {
+  const CameraInfo({required this.index, required this.name});
+
+  final int index;
+  final String name;
+}
+
+
 class RobotCommandService {
   RobotCommandService({
     required this.host,
@@ -88,6 +97,40 @@ class RobotCommandService {
     return _post(
       AppConfig.cameraEndpoint(host),
       {'enabled': enabled},
+    );
+  }
+
+  // 그 컴퓨터에 연결된 웹캠 목록을 가져옵니다. 실시간 모방 화면의 카메라
+  // 선택 드롭다운을 채우는 데 씁니다. 실패하면 빈 목록을 돌려줍니다.
+  Future<List<CameraInfo>> listCameras() async {
+    try {
+      final response = await _client
+          .get(Uri.parse(AppConfig.cameraListEndpoint(host)))
+          .timeout(const Duration(seconds: 10));
+
+      if (response.statusCode != 200) return const [];
+
+      final data =
+          jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+      final cameras = (data['cameras'] as List?) ?? const [];
+      return cameras
+          .map((entry) => entry as Map<String, dynamic>)
+          .map((camera) => CameraInfo(
+                index: camera['index'] as int,
+                name: camera['name'] as String? ?? '카메라 ${camera['index']}',
+              ))
+          .toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  // 손 모방에 쓸 웹캠을 고릅니다. 고른 장치 번호를 hand_mimic_node로 보내
+  // 그 카메라로 다시 열게 합니다.
+  Future<RobotCommandResult> selectCamera(int index) async {
+    return _post(
+      AppConfig.cameraSelectEndpoint(host),
+      {'index': index},
     );
   }
 

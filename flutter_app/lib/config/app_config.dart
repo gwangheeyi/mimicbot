@@ -72,6 +72,14 @@ class AppConfig {
   /// 웹캠 확보/반환. 실시간 모방 화면 진입/이탈에 맞춰 부른다.
   static String cameraEndpoint(String host) => '${baseUrl(host)}/robot/camera';
 
+  /// 그 컴퓨터에 연결된 웹캠 목록. 실시간 모방 화면의 카메라 선택에 쓴다.
+  static String cameraListEndpoint(String host) =>
+      '${baseUrl(host)}/robot/camera/list';
+
+  /// 손 모방에 쓸 웹캠 선택. 고른 장치 번호를 hand_mimic_node로 보낸다.
+  static String cameraSelectEndpoint(String host) =>
+      '${baseUrl(host)}/robot/camera/select';
+
   /// ollama(qwen3:4b)로 5초 춤 동작을 만들어 실행. 생성에 수십 초가 걸릴 수 있다.
   static String danceEndpoint(String host) => '${baseUrl(host)}/robot/dance';
 

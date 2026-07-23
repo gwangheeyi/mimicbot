@@ -53,6 +53,13 @@ class _MimicViewScreenState extends State<MimicViewScreen> {
   /// hand_mimic_node가 웹캠을 잡지 않아 다른 프로그램이 쓸 수 있다.
   RobotCommandService? _cameraControl;
 
+  /// 이 컴퓨터에 붙은 웹캠 목록. 미키(가상)에서만 채운다 — 맥시(실물)는 카메라를
+  /// lerobot 제어 서버가 잡으므로 앱에서 고르지 않는다.
+  List<CameraInfo> _cameras = const [];
+
+  /// 지금 고른 웹캠 장치 번호(/dev/videoN의 N). 아직 안 골랐으면 null.
+  int? _selectedCameraIndex;
+
   static const String _greeting = '안녕 친구야. 내가 너의 행동을 따라 해 볼게!';
 
   @override
@@ -84,12 +91,43 @@ class _MimicViewScreenState extends State<MimicViewScreen> {
       // 맥시(실물): 들어오면 조용히 리더 위치로 가서 대기한다(자동 시작 안 함).
       // 손 모방은 "모방 시작" 버튼으로 켠다. 웹캠은 그때 제어 서버가 잡는다.
       _cameraControl = null;
+      _cameras = const [];
+      _selectedCameraIndex = null;
       backend.restToLeader();
     } else {
       // 미키(가상): 웹캠을 확보한 뒤 모방을 자동으로 켠다.
       _cameraControl = RobotCommandService(host: target.host);
       _cameraControl!.setCamera(true).then((_) => _autoStartMimic());
+      // 붙어 있는 카메라 목록을 받아 선택 메뉴를 채운다.
+      _loadCameras();
     }
+  }
+
+  /// 미키(가상) 컴퓨터에 붙은 웹캠 목록을 받아 선택 메뉴를 채운다.
+  /// 아직 고른 게 없으면 노드 기본값(0번)에 맞춰 초기 선택을 잡는다.
+  Future<void> _loadCameras() async {
+    final control = _cameraControl;
+    if (control == null) return;
+    final cameras = await control.listCameras();
+    if (!mounted || !identical(control, _cameraControl)) return;
+    setState(() {
+      _cameras = cameras;
+      if (_selectedCameraIndex == null && cameras.isNotEmpty) {
+        _selectedCameraIndex =
+            cameras.any((c) => c.index == 0) ? 0 : cameras.first.index;
+      }
+    });
+  }
+
+  /// 손 모방에 쓸 웹캠을 바꾼다. 고른 번호를 hand_mimic_node로 보내 그 카메라로
+  /// 다시 열게 하고, 결과를 화면 기록에 남긴다.
+  Future<void> _selectCamera(int index) async {
+    final control = _cameraControl;
+    if (control == null || index == _selectedCameraIndex) return;
+    setState(() => _selectedCameraIndex = index);
+    final result = await control.selectCamera(index);
+    if (!mounted) return;
+    setState(() => _log.insert(0, result.message));
   }
 
   /// 모방 시작/정지 버튼. 홈에서 고른 대상(Gazebo 가상 / OMX-AI 실물)이 따라한다.
@@ -153,6 +191,32 @@ class _MimicViewScreenState extends State<MimicViewScreen> {
       appBar: AppBar(
         title: const Text('실시간 모방'),
         actions: [
+          // 카메라 선택 — 미키(가상)에서 웹캠이 여러 대일 때 어느 것으로 모방할지
+          // 고른다. 맥시(실물)는 제어 서버가 카메라를 잡으므로 여기서 고르지 않는다.
+          if (!target.isPhysical && _cameras.isNotEmpty)
+            PopupMenuButton<int>(
+              icon: const Icon(Icons.videocam),
+              tooltip: '카메라 선택',
+              onSelected: _selectCamera,
+              itemBuilder: (context) => [
+                for (final camera in _cameras)
+                  PopupMenuItem<int>(
+                    value: camera.index,
+                    child: Row(
+                      children: [
+                        Icon(
+                          camera.index == _selectedCameraIndex
+                              ? Icons.check
+                              : Icons.videocam_outlined,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 8),
+                        Flexible(child: Text(camera.name)),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
           // 브라우저는 사용자가 누르기 전에는 소리를 막기도 한다.
           // 이 버튼은 확실한 사용자 동작이라 그 경우에도 소리가 난다.
           IconButton(

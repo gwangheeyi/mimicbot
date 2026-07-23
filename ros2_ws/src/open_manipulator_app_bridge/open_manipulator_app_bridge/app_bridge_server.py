@@ -1,3 +1,6 @@
+import glob
+import re
+import subprocess
 import threading
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
@@ -61,6 +64,21 @@ class MimicRequest(BaseModel):
     enabled: bool
     # 맥시(실물)면 lerobot 제어 서버의 손 모방으로 넘긴다. 없으면 ROS2(미키).
     target: str | None = None
+
+
+# 손 모방에 쓸 웹캠 선택 요청. index 는 /dev/videoN 의 N.
+class CameraSelectRequest(BaseModel):
+    index: int
+
+
+# 연결된 웹캠 하나(대표 장치 번호와 사람이 읽을 이름).
+class CameraInfo(BaseModel):
+    index: int
+    name: str
+
+
+class CameraListResponse(BaseModel):
+    cameras: list[CameraInfo]
 
 
 class ChatRequest(BaseModel):
@@ -522,6 +540,103 @@ def set_camera(
         success=True,
         command=f"camera_{request.enabled}",
         message=f"카메라를 {action}했습니다.",
+        subscribers=subscriber_count,
+    )
+
+
+# 이 컴퓨터에 연결된 웹캠 목록을 [{index, name}] 로 돌려줍니다.
+#
+# v4l2-ctl 로 물리 카메라별로 묶어, 각 카메라의 대표 장치 번호(가장 작은
+# /dev/videoN)만 고릅니다. UVC 웹캠은 첫 노드가 영상 캡처이고 나머지는
+# 메타데이터라, 대표 노드만 보여 주면 앱에서 카메라를 고를 수 있습니다.
+# v4l2-ctl 이 없으면 /dev/video* 를 그대로 나열합니다(대비책).
+def _list_cameras() -> list[dict]:
+    try:
+        output = subprocess.run(
+            ["v4l2-ctl", "--list-devices"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        ).stdout
+    except (FileNotFoundError, OSError, subprocess.SubprocessError):
+        output = ""
+
+    cameras: list[dict] = []
+
+    if output.strip():
+        name: str | None = None
+        indices: list[int] = []
+
+        def flush() -> None:
+            if name and indices:
+                cameras.append({"index": min(indices), "name": name})
+
+        for line in output.splitlines():
+            if not line.strip():
+                continue
+            if not line[0].isspace():
+                # 들여쓰기 없는 줄은 새 카메라 블록의 헤더(이름)입니다.
+                flush()
+                header = line.strip().rstrip(":")
+                # "이름 (usb-...)" 에서 버스 정보를 떼고 공백을 정리합니다.
+                header = re.sub(r"\s*\(usb-[^)]*\)\s*$", "", header)
+                name = re.sub(r"\s+", " ", header).strip()
+                indices = []
+            else:
+                match = re.search(r"/dev/video(\d+)", line)
+                if match:
+                    indices.append(int(match.group(1)))
+        flush()
+
+    if not cameras:
+        for path in sorted(glob.glob("/dev/video*")):
+            match = re.search(r"/dev/video(\d+)", path)
+            if match:
+                index = int(match.group(1))
+                cameras.append(
+                    {"index": index, "name": f"카메라 {index} ({path})"}
+                )
+
+    cameras.sort(key=lambda camera: camera["index"])
+    return cameras
+
+
+# 실시간 모방에 쓸 웹캠 목록을 앱에 돌려줍니다. 앱의 카메라 선택 UI가
+# 이 목록으로 드롭다운을 채웁니다.
+@app.get("/robot/camera/list", response_model=CameraListResponse)
+def list_cameras() -> CameraListResponse:
+    return CameraListResponse(
+        cameras=[CameraInfo(**camera) for camera in _list_cameras()]
+    )
+
+
+# 앱에서 고른 웹캠 장치 번호를 hand_mimic_node로 보냅니다. 노드가 그 번호로
+# 웹캠을 다시 엽니다. 카메라가 여러 대일 때 어느 것으로 모방할지 고릅니다.
+@app.post("/robot/camera/select", response_model=CommandResponse)
+def select_camera(request: CameraSelectRequest) -> CommandResponse:
+    if COMMAND_PUBLISHER is None:
+        raise HTTPException(
+            status_code=503,
+            detail="ROS2 Publisher가 준비되지 않았습니다.",
+        )
+
+    subscriber_count = COMMAND_PUBLISHER.publish_camera_index(request.index)
+
+    if subscriber_count == 0:
+        return CommandResponse(
+            success=False,
+            command=f"camera_index_{request.index}",
+            message=(
+                "손 모방 노드가 실행 중이 아닙니다. "
+                "hand_mimic_node를 먼저 실행하세요."
+            ),
+            subscribers=0,
+        )
+
+    return CommandResponse(
+        success=True,
+        command=f"camera_index_{request.index}",
+        message=f"{request.index}번 카메라로 바꿨습니다.",
         subscribers=subscriber_count,
     )
 

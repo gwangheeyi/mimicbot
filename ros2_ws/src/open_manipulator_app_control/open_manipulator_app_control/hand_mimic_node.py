@@ -21,6 +21,7 @@ from rclpy.action import ActionClient
 from rclpy.node import Node
 from sensor_msgs.msg import Image
 from std_msgs.msg import Bool
+from std_msgs.msg import Int32
 
 from open_manipulator_app_control.hand_metrics import (
     arm_joint_positions,
@@ -35,6 +36,7 @@ from open_manipulator_app_control.hand_mimic_config import (
     CAMERA_ENABLE_TOPIC,
     CAMERA_HEIGHT,
     CAMERA_INDEX,
+    CAMERA_INDEX_TOPIC,
     CAMERA_WIDTH,
     COMMAND_DURATION_SECONDS,
     COMMAND_PERIOD_SECONDS,
@@ -89,6 +91,15 @@ class HandMimicNode(Node):
             10,
         )
 
+        # 앱에서 사용할 웹캠 장치 번호를 골라 보냅니다. 카메라가 여러 대일 때
+        # 어느 것으로 모방할지 여기서 바꿉니다.
+        self.camera_index_subscription = self.create_subscription(
+            Int32,
+            CAMERA_INDEX_TOPIC,
+            self._camera_index_callback,
+            10,
+        )
+
         self.gripper_client = ActionClient(
             self,
             GripperCommand,
@@ -125,6 +136,23 @@ class HandMimicNode(Node):
             self._acquire_camera()
         else:
             self._release_camera()
+
+    # 앱에서 고른 웹캠 장치 번호를 받습니다. 번호가 바뀌었고 카메라가 이미
+    # 열려 있으면, 열려 있던 장치를 반환하고 새 번호로 다시 엽니다. 닫혀 있으면
+    # 번호만 바꿔 두고, 다음에 화면에 들어와 확보할 때 새 번호로 열립니다.
+    def _camera_index_callback(self, message: Int32) -> None:
+        new_index = int(message.data)
+        if new_index == self.camera_index:
+            return
+
+        self.get_logger().info(
+            f"웹캠 장치를 {self.camera_index}번에서 {new_index}번으로 바꿉니다."
+        )
+        self.camera_index = new_index
+
+        if self.camera is not None:
+            self._release_camera()
+            self._acquire_camera()
 
     # 웹캠을 열고 해상도를 맞춥니다. 이미 열려 있으면 그대로 둡니다.
     # 열지 못하면(다른 프로그램이 쓰는 중 등) 노드를 죽이지 않고 경고만 남깁니다.
